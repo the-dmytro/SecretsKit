@@ -7,29 +7,30 @@ Add the package and link `SecretsRuntime` to your iOS/watchOS targets.
 Create a schema file (committed, no values):
 - `Config/Secrets.schema.json`
 
-## 3) Provide secrets (outside the repo)
-For local development, keep secrets in a private `.xcconfig` outside the repo and set:
-- `SECRETS_PROVIDER=file`
-- `SECRETS_SOURCE_PATH=/path/to/Secrets.xcconfig`
-- `SECRETS_SCHEMA_PATH=/path/to/Secrets.schema.json`
-
-## 4) Add build phases
-Add two Run Script phases per target:
-
-1. Validate Secrets (early)
-```
-${PATH_TO_SECRETSKIT}/Scripts/validate_secrets.sh
+## 3) Add a non-secret config file (committed)
+Create `Config/SecretsKit.config.json` with provider and paths. Example:
+```json
+{
+  "schemaPath": "Secrets.schema.json",
+  "provider": "auto",
+  "auto": { "order": ["env", "vault", "file"], "allowMerge": false },
+  "file": { "sourcePath": "../your-secrets/Secrets.xcconfig" }
+}
 ```
 
-2. Seal Secrets (Release only, after resources are staged)
+## 4) Add a project-owned runner script
+Commit a runner script in your project (recommended):
 ```
-${PATH_TO_SECRETSKIT}/Scripts/seal_secrets.sh
+Scripts/SecretsKit/secretskit.sh
 ```
 
-Ensure `SECRETS_OUTPUT_PATH` points at the bundle resource location:
+Your build phases should call the runner (not scripts inside the package), e.g.:
 ```
-${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Secrets.sealed
+${SRCROOT}/Scripts/SecretsKit/secretskit.sh validate
+${SRCROOT}/Scripts/SecretsKit/secretskit.sh seal
 ```
+
+The runner sets `SECRETS_CONFIG_PATH` and `SECRETS_OUTPUT_PATH`, then invokes `secretcompiler`.
 
 ## 5) Runtime usage
 ```swift
