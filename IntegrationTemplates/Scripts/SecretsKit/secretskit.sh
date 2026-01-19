@@ -210,7 +210,7 @@ bootstrap_cli() {
   )
 
   local build_bin_dir
-  build_bin_dir="$(cd "${src_dir}" && xcrun --sdk macosx swift build -c release --product secretcompiler --show-bin-path)"
+  build_bin_dir="$(cd "${src_dir}" && xcrun --sdk macosx swift build -c release --product secretcompiler >/dev/null && xcrun --sdk macosx swift build -c release --show-bin-path)"
   cp "${build_bin_dir}/secretcompiler" "${bin_path}"
   chmod 755 "${bin_path}"
 
