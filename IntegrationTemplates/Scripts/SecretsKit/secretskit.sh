@@ -55,17 +55,6 @@ PY
 }
 
 find_package_resolved() {
-  local candidates=(
-    "${PROJECT_ROOT}/ios-house-of-rose.xcworkspace/xcshareddata/swiftpm/Package.resolved"
-    "${PROJECT_ROOT}/ios-house-of-rose.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
-  )
-  for path in "${candidates[@]}"; do
-    if [ -f "${path}" ]; then
-      echo "${path}"
-      return 0
-    fi
-  done
-
   local found
   found="$(find "${PROJECT_ROOT}" -maxdepth 6 -path "*/xcshareddata/swiftpm/Package.resolved" -print -quit 2>/dev/null || true)"
   if [ -n "${found}" ]; then
@@ -96,7 +85,7 @@ for pin in pins:
     location = (pin.get("location") or "").lower()
     if identity == "secretskit" or location.endswith("/secretskit.git"):
         state = pin.get("state", {})
-        for key in ("version", "revision", "branch"):
+        for key in ("revision", "version", "branch"):
             if state.get(key):
                 print(state[key])
                 sys.exit(0)
