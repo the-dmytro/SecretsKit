@@ -19,6 +19,11 @@ It helps keep secrets **out of the repo** by producing a bundled `Secrets.sealed
   - Avoids relying on Xcode/DerivedData package checkout paths.
   - Can use a Homebrew-installed CLI (fast-path) or a cached source build (fallback).
 
+## Platform requirements
+- iOS 14+
+- watchOS 7+
+- macOS 11+
+
 ## Quick start (Xcode)
 1) Add the package:
 - Xcode → **File** → **Add Package Dependencies…**
@@ -99,4 +104,3 @@ Common environment overrides:
 - The CLI never prints secret values.
 - Avoid placing plaintext secrets in the repo or DerivedData.
 - `Secrets.sealed` is intentionally bundled as a resource (treat it as “client-visible”).
-

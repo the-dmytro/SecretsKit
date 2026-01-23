@@ -4,9 +4,9 @@ import PackageDescription
 let package = Package(
     name: "SecretsKit",
     platforms: [
-        .iOS(.v13),
-        .watchOS(.v6),
-        .macOS(.v12)
+        .iOS(.v14),
+        .watchOS(.v7),
+        .macOS(.v11)
     ],
     products: [
         .library(name: "SecretsRuntime", targets: ["SecretsRuntime"]),
