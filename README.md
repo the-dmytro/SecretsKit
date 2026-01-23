@@ -38,14 +38,18 @@ It helps keep secrets **out of the repo** by producing a bundled `Secrets.sealed
 - Example: `Config/SecretsKit.config.json.example`
 
 4) Copy the runner into your repo:
-- Copy `IntegrationTemplates/Scripts/SecretsKit/secretskit.sh` → `Scripts/SecretsKit/secretskit.sh`
-- `chmod +x Scripts/SecretsKit/secretskit.sh`
+- Copy `IntegrationTemplates/Scripts/SecretsKit/` → `Scripts/SecretsKit/`
+- `chmod +x Scripts/SecretsKit/*.sh`
 
 5) Add Xcode build phases (per target):
 - **Validate Secrets** (early):
-  - `${SRCROOT}/Scripts/SecretsKit/secretskit.sh validate`
+  - `${SRCROOT}/Scripts/SecretsKit/validate_secrets.sh` (recommended)
+  - or `${SRCROOT}/Scripts/SecretsKit/secretskit.sh validate`
 - **Seal Secrets** (after resources are staged; commonly Release only):
-  - `${SRCROOT}/Scripts/SecretsKit/secretskit.sh seal`
+  - `${SRCROOT}/Scripts/SecretsKit/seal_secrets.sh` (recommended)
+  - or `${SRCROOT}/Scripts/SecretsKit/secretskit.sh seal`
+
+Tip: put any `SECRETS_*` overrides inside the wrapper scripts to avoid Xcode script escaping issues.
 
 6) Install the tool (once per machine) or use Homebrew:
 ```

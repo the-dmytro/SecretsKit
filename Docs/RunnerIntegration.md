@@ -11,6 +11,8 @@ This guide describes the project-owned runner approach. The runner is committed 
 
 ## Expected files in the consumer repo
 - `Scripts/SecretsKit/secretskit.sh` (runner, committed)
+- `Scripts/SecretsKit/validate_secrets.sh` (optional wrapper)
+- `Scripts/SecretsKit/seal_secrets.sh` (optional wrapper)
 - `Config/SecretsKit.config.json` (non-secret, committed)
 - `Config/Secrets.schema.json` (non-secret, committed)
 
@@ -26,13 +28,14 @@ You can bootstrap the tool once per machine:
 ```
 
 ## Build phases
-Call the runner from Xcode build phases:
+Call the runner or wrappers from Xcode build phases:
 ```
-${SRCROOT}/Scripts/SecretsKit/secretskit.sh validate
-${SRCROOT}/Scripts/SecretsKit/secretskit.sh seal
+${SRCROOT}/Scripts/SecretsKit/validate_secrets.sh
+${SRCROOT}/Scripts/SecretsKit/seal_secrets.sh
 ```
 
 Use `SECRETS_CONFIG_PATH` if the config lives outside `Config/SecretsKit.config.json`.
+If you need to export additional `SECRETS_*` values, do it inside the wrapper scripts.
 
 ## Tool resolution order (runner)
 1) `SECRETSKIT_CLI_PATH` (explicit path)

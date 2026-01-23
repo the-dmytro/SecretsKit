@@ -19,18 +19,21 @@ Create `Config/SecretsKit.config.json` with provider and paths. Example:
 ```
 
 ## 4) Add a project-owned runner script
-Commit a runner script in your project (recommended):
+Commit the runner (and optional wrappers) in your project:
 ```
 Scripts/SecretsKit/secretskit.sh
+Scripts/SecretsKit/validate_secrets.sh
+Scripts/SecretsKit/seal_secrets.sh
 ```
 
-Your build phases should call the runner (not scripts inside the package), e.g.:
+Your build phases should call the runner or wrappers (not scripts inside the package), e.g.:
 ```
-${SRCROOT}/Scripts/SecretsKit/secretskit.sh validate
-${SRCROOT}/Scripts/SecretsKit/secretskit.sh seal
+${SRCROOT}/Scripts/SecretsKit/validate_secrets.sh
+${SRCROOT}/Scripts/SecretsKit/seal_secrets.sh
 ```
 
 The runner sets `SECRETS_CONFIG_PATH` and `SECRETS_OUTPUT_PATH`, then invokes `secretcompiler`.
+If you need additional `SECRETS_*` overrides, prefer editing the wrapper scripts to avoid Xcode escaping issues.
 
 ## 5) Runtime usage
 ```swift
