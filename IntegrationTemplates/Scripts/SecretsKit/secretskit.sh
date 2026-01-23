@@ -7,7 +7,12 @@ if [ -n "${COMMAND}" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+# Use SRCROOT (set by Xcode) as primary source, fallback to script-relative calculation
+if [ -n "${SRCROOT:-}" ] && [ -d "${SRCROOT}" ]; then
+  PROJECT_ROOT="${SRCROOT}"
+else
+  PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+fi
 
 die() {
   echo "error: $*" >&2
@@ -141,7 +146,7 @@ resolve_cli_ref() {
     echo "${SECRETSKIT_CLI_REF}"
     return 0
   fi
-  if [ "${SECRETSKIT_CLI_POLICY:-}" = "locked" ] || [ "${CLI_POLICY}" = "locked" ]; then
+  if [ "${SECRETSKIT_CLI_POLICY:-}" = "locked" ] || [ "${CLI_POLICY:-}" = "locked" ]; then
     local ref
     ref="$(resolve_ref_from_package_resolved || true)"
     if [ -n "${ref}" ]; then
