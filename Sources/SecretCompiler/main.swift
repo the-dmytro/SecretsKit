@@ -73,6 +73,8 @@ private func resolveVaultSettings(env: [String: String], config: SecretsKitConfi
     guard let address, !address.isEmpty else {
         throw SecretCompilerError.missingVaultConfig(addrEnv)
     }
+    let allowInsecureHTTP = parseBool(env["SECRETS_VAULT_ALLOW_INSECURE_HTTP"]) ?? false
+    try validateVaultTransport(address: address, allowInsecureHTTP: allowInsecureHTTP)
     guard let token, !token.isEmpty else {
         throw SecretCompilerError.missingVaultConfig(tokenEnv)
     }
@@ -289,6 +291,7 @@ private func printUsage() {
       SECRETS_VAULT_PATH
       SECRETS_VAULT_KV_VERSION
       SECRETS_VAULT_TIMEOUT
+      SECRETS_VAULT_ALLOW_INSECURE_HTTP
     """
     print(message)
 }
@@ -336,6 +339,9 @@ func main() -> Int32 {
         return 1
     } catch SecretCompilerError.missingVaultConfig(let name) {
         printError("Missing Vault configuration: \(name)")
+        return 1
+    } catch SecretCompilerError.vaultInsecureTransport(let address) {
+        printError("Refusing insecure Vault transport for \(address). Use https, or set SECRETS_VAULT_ALLOW_INSECURE_HTTP=1 for local development only.")
         return 1
     } catch SecretCompilerError.vaultRequestFailed(let message) {
         printError("Vault request failed: \(message)")

@@ -46,10 +46,12 @@ Do **both**, in order — they are not mutually exclusive:
    it makes the "easy extraction" claim true again and removes the misleading crypto theater.
 
 3. **Phase 2 — the by-design fix (project-sized).** Introduce a mandatory `classification` per key.
-   `serverOnly` keys **fail the build if routed into the bundle**. Add the server-mediated tier
-   (short-lived tokens gated by App Attest / DeviceCheck) as the sanctioned home for high-value
-   secrets. After this, the product *cannot* be misused to bundle a true secret — the fundamental
-   flaw is gone by construction, not by documentation.
+   `serverOnly` keys **fail the build if routed into the bundle**. Make `clientBundled` (local-only)
+   a deliberate, informed choice rather than a default — legitimate and often unavoidable for
+   autonomous/offline apps or when you don't own a backend. The server-mediated tier (short-lived
+   tokens gated by App Attest / DeviceCheck) is an **optional** home for true secrets when you have a
+   backend to mediate them. After this, the product *cannot* be misused to bundle a value you
+   declared a true secret — the fundamental flaw is gone by construction, not by documentation.
 
 If you only ever do Phase 0, the app is safe to run. If you do Phase 0+1, the tool stops lying about
 what it provides. Phase 2 is what makes the design itself sound.

@@ -94,7 +94,9 @@ Tries providers in order until all *required keys* are satisfied (recommended fo
 import SecretsRuntime
 
 let secrets = try SecretsManager()
-let apiKey = secrets.value(for: "EXAMPLE_API_KEY")
+let apiKey = try secrets.requiredValue(for: "EXAMPLE_API_KEY")
+// or, to handle absence without throwing:
+let optionalKey = secrets.optionalValue(for: "EXAMPLE_API_KEY")
 ```
 
 ## Configuration / overrides
@@ -108,3 +110,7 @@ Common environment overrides:
 - The CLI never prints secret values.
 - Avoid placing plaintext secrets in the repo or DerivedData.
 - `Secrets.sealed` is intentionally bundled as a resource (treat it as “client-visible”).
+- Bundled values are **obfuscated, not encrypted** — a determined reverse engineer can recover them.
+  Only ship values that are safe to be client-visible; route true secrets through a backend.
+- For the full threat model and the planned hardening roadmap, see
+  [`Docs/ImprovementPlan/`](Docs/ImprovementPlan/README.md).

@@ -20,6 +20,14 @@ let package = Package(
         .executableTarget(
             name: "SecretCompiler",
             dependencies: ["SecretsRuntime"]
+        ),
+        .testTarget(
+            name: "SecretsRuntimeTests",
+            dependencies: ["SecretsRuntime"]
+        ),
+        .testTarget(
+            name: "SecretCompilerTests",
+            dependencies: ["SecretCompiler"]
         )
     ]
 )

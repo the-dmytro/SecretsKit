@@ -6,31 +6,32 @@ yet. Effort is rough calendar estimate for one developer; treat as relative sizi
 Each item links to its flaw ID in [02-flaw-catalog.md](02-flaw-catalog.md) and the design decision in
 [03-target-architecture-v2.md](03-target-architecture-v2.md).
 
-## Phase 0 — Stop the bleeding (≈ 2–4 days)
+## Phase 0 — Stop the bleeding (≈ 2–4 days) — ✅ done in 0.2.0
 
 Pure correctness and safety fixes. **No architectural debate, no breaking the format.** Ship these
 regardless of what you decide about v2. A shipping app is materially safer after Phase 0 alone.
 
-- [ ] **Replace `fatalError` with throwing API.** Add `requiredValue(for:) throws`; make `value(for:)`
-      a deprecated shim. (H1 · Decision 4) — *the single highest-value fix; one bad key currently
-      crashes the app.*
-- [ ] **Remove the debugger → `""` substitution.** Take `SecretProtection.protect` out of the value
-      path; delete the no-op `isHooked()`. If fail-closed is wanted, make it explicit and throwing.
-      (H2 · Decision 4)
-- [ ] **Drop or rewrite `ProtectedSecret`'s zeroing claim.** Either remove the cosmetic `deinit`
-      scrubbing or replace with a caller-owned byte buffer; update docs to state the real guarantee.
-      (M1 · Decision 4)
-- [ ] **Require HTTPS for Vault** with a loud `SECRETS_VAULT_ALLOW_INSECURE_HTTP=1` escape hatch.
-      (H3 · Decision 6) — *small change, closes a token-leak hole.*
-- [ ] **Fix `validate(requiredKeys:)`**: remove the `contains("__")` false-positive; or remove the
-      method if the CLI's `validate` supersedes it. (M5)
-- [ ] **Docs honesty pass.** Align `README.md` with `Docs/SecurityNotes.md`: state the threat model,
-      stop implying bundled = secret. (L1)
-- [ ] **Stand up a test target** and cover every Phase 0 fix: throwing errors on missing/empty/corrupt
-      sealed data, Vault HTTPS rejection, no empty-string substitution. (L2)
+Completed 2026-06-12; see [`CHANGELOG.md`](../../CHANGELOG.md). Sealed-file format unchanged, so no
+data migration was needed — only API migration, guided by deprecation warnings.
 
-Exit criteria: no `fatalError` in the runtime value path; no code path returns a silently-empty
-secret; Vault refuses plaintext HTTP by default; CI runs the new tests.
+- [x] **Replace `fatalError` with throwing API.** Added `requiredValue(for:) throws` +
+      `optionalValue(for:)`; `value(for:)` is now a deprecated shim. (H1 · Decision 4)
+- [x] **Remove the debugger → `""` substitution.** `SecretProtection.protect` removed from the value
+      path; the type is now an opt-in `isDebuggerAttached()` utility; no-op `isHooked()` deleted.
+      (H2 · Decision 4)
+- [x] **Rewrote `ProtectedSecret`** to store secret bytes and best-effort zero them on release, with
+      an honest doc comment about what `String` can and cannot guarantee. (M1 · Decision 4)
+- [x] **Require HTTPS for Vault** with a loud `SECRETS_VAULT_ALLOW_INSECURE_HTTP=1` escape hatch.
+      (H3 · Decision 6)
+- [x] **Fixed `validate(requiredKeys:)`**: deprecated it; added `validateRequiredKeys(_:) throws` that
+      runs in every build config without placeholder over-matching. (M5)
+- [x] **Docs honesty pass.** README runtime API updated; obfuscation-not-encryption note + threat-model
+      pointer added to Security notes. (L1)
+- [x] **Stood up test targets** (`SecretsRuntimeTests`, `SecretCompilerTests`) covering throwing errors
+      on missing/empty/corrupt sealed data and Vault HTTPS rejection — 13 tests, all green. (L2)
+
+Exit criteria (met): no `fatalError` in the runtime value path; no code path returns a silently-empty
+secret; Vault refuses plaintext HTTP by default; `swift test` runs the new suites.
 
 ## Phase 1 — Honest obfuscation + trustworthy build (≈ 1–2 weeks)
 
@@ -67,10 +68,12 @@ decision in it, so it gets a gate.
 Answer before starting Phase 2:
 
 1. **Do any of your keys actually need `serverOnly` protection?** If everything you ship is genuinely
-   a publishable/`clientBundled` value, Tier B may be optional and Phase 2 reduces to *just*
-   mandatory classification + the build-fail guard (cheap, ≈ 2–3 days). If you have real secrets
-   (payment keys, privileged API tokens), Tier B is the point of the whole project and worth the
-   investment.
+   a publishable/`clientBundled` (local-only) value — which is the correct, often unavoidable answer
+   for autonomous/offline apps or when you don't own a backend — Tier B stays unbuilt and Phase 2
+   reduces to *just* mandatory classification + the build-fail guard + the classification report
+   (cheap, ≈ 2–3 days). Build Tier B only if and when you have a real secret *and* a backend to
+   mediate it; until then, the classification system still earns its keep by making the local-only
+   decision explicit and intentional.
 2. **Do you control a backend** that can run a token-exchange + App Attest verification endpoint? Tier
    B needs one. If not, the honest interim answer is: classify those keys `serverOnly`, let the build
    fail, and *don't ship them at all* until the backend exists — which is itself the correct

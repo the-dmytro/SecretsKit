@@ -47,15 +47,44 @@ Extend the schema so every key **must** declare a classification; sealing fails 
 | Class | Meaning | Build behavior |
 |-------|---------|----------------|
 | `public` | Safe to commit and ship (e.g. a published client ID). | Bundled verbatim, no obfuscation needed. |
-| `clientBundled` | Acceptable in a client bundle, must be rotatable/revocable, low blast radius. | Obfuscated and bundled (Tier A). |
-| `serverOnly` | A real secret. Must never reach a device. | **`seal` fails** if this key would be written to the bundle. Routed to Tier B config only. |
+| `clientBundled` (a.k.a. local-only) | Lives only on the device; no server in the loop. Accepts eventual disclosure; should be rotatable where possible. | Obfuscated and bundled (Tier A). |
+| `serverOnly` | A real secret that must never reach a device. | **`seal` fails** if this key would be written to the bundle. Routed to Tier B only. |
 
-This single rule is what makes v2 *structurally* safe: a developer who classifies Stripe's secret key
-as `serverOnly` cannot accidentally bundle it, because the build refuses. No documentation, no
-discipline, no review required — the tool enforces it.
+This single rule is what makes the choice *explicit and enforced*: a developer who decides a value is
+`serverOnly` cannot then accidentally bundle it, because the build refuses. And a developer who
+decides `clientBundled` is the right call has made that decision deliberately, with the tradeoff in
+front of them — not by default. No documentation, no discipline, no review required — the tool
+records the decision and holds the line.
 
-`seal` also emits a **classification report** (key → class, never values) so reviewers can see at a
-glance what is being shipped client-side.
+`seal` also emits a **classification report** (key → class, never values) so you can see at a glance
+what is being shipped client-side.
+
+### Choosing a classification — an educated choice, not a mandate
+
+v2 deliberately does **not** preach "always go server-side." That advice is useless to a whole class
+of real projects:
+
+- **Autonomous / offline-by-design apps** — a watch complication, a kiosk, an embedded or field
+  device, anything that must function without a reachable backend — often *cannot* fetch a token at
+  the moment they need a credential. For these, `clientBundled` (local-only) is not the lazy option;
+  it is the only one that works.
+- **Apps where you don't own the backend** — you may be integrating a third-party service with no
+  server of your own to mediate access. Again, local-only may be the only lever you have.
+- **Low-stakes credentials** — a rate-limited, scoped, rotatable key whose worst-case disclosure is
+  an annoyance, not a breach, is perfectly reasonable to bundle.
+
+The job of the classification system is to let you make that call **with clear eyes**, then hold you
+to it:
+
+| If the value… | …choose | …and accept |
+|---------------|---------|-------------|
+| is meant to be public | `public` | nothing to hide; shipped as-is |
+| must work with no server in the loop, and tolerates eventual extraction | `clientBundled` | a determined reverse engineer *will* recover it; keep it scoped + rotatable |
+| would be a genuine breach if extracted, **and** a backend is available | `serverOnly` | you must run a token-exchange path (Tier B) |
+
+`serverOnly` is the strongest option, but it is **opt-in and situational**, not the goal everyone
+should be pushed toward. The design's real contribution is making the tradeoff visible at build time
+so the decision is informed and intentional — whichever way you go.
 
 ## Decision 1 — Tier A: honest obfuscation with key/ciphertext separation
 
@@ -99,10 +128,13 @@ Secrecy of bundled data is impossible; **integrity is not**. Use signing for wha
 This is an honest boundary: "this config was produced by our pipeline and not tampered with after."
 It deliberately does **not** claim to hide the config from the app's owner.
 
-## Decision 3 — Tier B: server-mediated secrets (the actual fix for real secrets)
+## Decision 3 — Tier B: server-mediated secrets (optional; the actual fix when you *can* use it)
 
-For anything classified `serverOnly`, the secret **never leaves the server**. SecretsKit's job shifts
-from "bundle it cleverly" to "make the right thing easy":
+Tier B is the sanctioned home for `serverOnly` keys. It is **opt-in** — projects that legitimately
+chose `clientBundled` (see "Choosing a classification" above) never touch it. When a value genuinely
+needs protection *and* a backend is available, this is the only path that delivers it: the secret
+**never leaves the server**. SecretsKit's job shifts from "bundle it cleverly" to "make the right
+thing easy":
 
 - A small runtime client (`SecretsKit.tokenProvider`) exchanges a device assertion for a short-lived,
   scoped token from the app's backend.

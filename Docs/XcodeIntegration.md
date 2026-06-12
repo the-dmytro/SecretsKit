@@ -40,5 +40,5 @@ If you need additional `SECRETS_*` overrides, prefer editing the wrapper scripts
 import SecretsRuntime
 
 let secrets = try SecretsManager()
-let apiKey = secrets.value(for: "EXAMPLE_API_KEY")
+let apiKey = try secrets.requiredValue(for: "EXAMPLE_API_KEY")
 ```

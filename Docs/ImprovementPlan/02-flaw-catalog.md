@@ -142,6 +142,11 @@ that happens to be shadowed by a later one fails silently. Minor, but worth a di
 
 ## Summary table
 
+> **Status (0.2.0):** H1, H2, M1, M5, and the HTTPS half of H3 are fixed in Phase 0, along with the
+> test gap (L2) and the API/docs honesty pass (L1). The findings below are kept as the original
+> analysis; see [`CHANGELOG.md`](../../CHANGELOG.md) and [04-roadmap.md](04-roadmap.md) for what has
+> shipped. C1, C2, H4, M2, M3, M4 remain for Phase 1; classification work (L3) for Phase 2.
+
 | ID | Severity | One-line | Phase |
 |----|----------|----------|-------|
 | C1 | Critical | Key ships with ciphertext | 1 |

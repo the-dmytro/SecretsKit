@@ -13,6 +13,7 @@ enum SecretCompilerError: Error {
     case missingVaultConfig(String)
     case vaultRequestFailed(String)
     case vaultInvalidResponse(String)
+    case vaultInsecureTransport(String)
     case autoProviderFailed([AutoProviderAttempt])
 }
 
@@ -41,6 +42,8 @@ extension SecretCompilerError: CustomStringConvertible {
             return "Vault request failed: \(message)"
         case .vaultInvalidResponse(let message):
             return "Invalid Vault response: \(message)"
+        case .vaultInsecureTransport(let address):
+            return "Insecure Vault transport: \(address)"
         case .autoProviderFailed:
             return "Auto provider failed"
         }
@@ -201,6 +204,25 @@ final class AutoSecretsProvider: SecretsProvider {
         }
 
         return secrets
+    }
+}
+
+/// Validates the Vault address transport. Requires `https` unless `allowInsecureHTTP` is set, in which
+/// case `http` is permitted (local development only). Any other scheme — or a missing scheme — is rejected.
+func validateVaultTransport(address: String, allowInsecureHTTP: Bool) throws {
+    let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let scheme = URLComponents(string: trimmed)?.scheme?.lowercased() else {
+        throw SecretCompilerError.vaultRequestFailed("Invalid Vault address (no URL scheme): \(address)")
+    }
+    switch scheme {
+    case "https":
+        return
+    case "http":
+        guard allowInsecureHTTP else {
+            throw SecretCompilerError.vaultInsecureTransport(address)
+        }
+    default:
+        throw SecretCompilerError.vaultRequestFailed("Unsupported Vault scheme '\(scheme)'; use https.")
     }
 }
 
