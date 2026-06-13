@@ -98,7 +98,8 @@ its contract documented so `serverOnly` keys have a real destination.
       `clientBundled` default** rather than hard-mandatory, for graceful migration; opt into strict with
       `--require-classification` / `SECRETSKIT_REQUIRE_CLASSIFICATION`. (Decision 0)
 - [x] **Build-fail guard:** `seal` excludes `serverOnly` keys and aborts if one is explicitly routed in.
-      (Decision 0)
+      0.4.1 also makes schemas with only `serverOnly` keys emit an empty `OBF3` resource without
+      needing a provider. (Decision 0)
 - [x] **Classification report** emitted by `seal` (keys + classes, never values). (Decision 0)
 - [~] **Tier B contract documented** in [`Docs/ServerMediatedSecrets.md`](../ServerMediatedSecrets.md)
       (App Attest/DeviceCheck gating, short-lived/revocable tokens). Client SDK + reference backend
@@ -108,7 +109,8 @@ its contract documented so `serverOnly` keys have a real destination.
 
 Exit criteria (met for the build-time guarantee): a `serverOnly` key cannot be sealed into the bundle
 (excluded by default, aborts if routed in); the seal report shows every bundled key's classification.
-Runtime token-exchange for `serverOnly` keys remains a documented-but-unbuilt contract by design.
+The regression suite covers 39 tests as of 0.4.1. Runtime token-exchange for `serverOnly` keys remains
+a documented-but-unbuilt contract by design.
 
 ## Sequencing summary
 

@@ -142,11 +142,12 @@ that happens to be shadowed by a later one fails silently. Minor, but worth a di
 
 ## Summary table
 
-> **Status (0.4.0):** Phase 0 fixed H1, H2, M1, M5, H3, L1, L2. Phase 1 fixed **C1, C2** (the critical
+> **Status (0.4.1):** Phase 0 fixed H1, H2, M1, M5, H3, L1, L2. Phase 1 fixed **C1, C2** (the critical
 > pair — `OBF3` separates key from ciphertext and uses per-entry nonces), **H4** (strict runner, with
 > digest-pinned PATH handling tightened in 0.3.1), **M2, M3** (provider hardening, including Vault path
 > validation in 0.3.1). Phase 2 (0.4.0) added **key classification** with a `serverOnly` build-fail
-> guard — the by-design half of the plan's keystone. **M4** (manifest signing) stays **deferred**;
+> guard — the by-design half of the plan's keystone; 0.4.1 tightened the serverOnly-only sealing path.
+> **M4** (manifest signing) stays **deferred**;
 > Tier B's runtime token-exchange is documented but unbuilt by design (no backend today). Remaining: M4
 > and Tier B runtime. The findings below are kept as the original analysis; see
 > [`CHANGELOG.md`](../../CHANGELOG.md) and [04-roadmap.md](04-roadmap.md) for what shipped.

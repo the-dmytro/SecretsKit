@@ -145,6 +145,7 @@ Common environment overrides:
 - `SECRETS_SOURCE_PATH` (for `file`)
 - `SECRETS_OUTPUT_PATH` (for `seal`)
 - `SECRETS_OBF_KEY_MATERIAL` (for `OBF3` seal)
+- `SECRETSKIT_REQUIRE_CLASSIFICATION=1` (fail on keys without `classification`)
 - `SECRETSKIT_ALLOW_LEGACY_OBF2=1` (migration-only fallback)
 
 ## Security notes

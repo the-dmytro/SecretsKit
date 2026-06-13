@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1 — Unreleased
+
+Patch hardening for the 0.4.x classification rollout.
+
+### Fixed
+- Schemas with only `serverOnly` keys now seal an empty `OBF3` resource without requiring any local
+  provider/source path, because no client-bundled value is loaded.
+
+### Added
+- Regression tests for serverOnly-only sealing and runner forwarding of `--require-classification`
+  (39 tests total).
+
 ## 0.4.0 — Unreleased
 
 Phase 2 of the improvement plan: **key classification** — the bundle-or-not decision becomes explicit

@@ -42,7 +42,7 @@ final class RunnerPolicyTests: XCTestCase {
             body: """
             #!/bin/sh
             if [ "$1" = "version" ] && [ "$2" = "--json" ]; then
-              echo '{"version":"0.3.1"}'
+              echo '{"version":"0.4.1"}'
               exit 0
             fi
             echo "fake compiler $*" >&2
@@ -64,6 +64,44 @@ final class RunnerPolicyTests: XCTestCase {
         XCTAssertTrue(result.stderr.contains("fake compiler validate --config"), result.stderr)
     }
 
+    func testRunnerForwardsRequireClassificationFlag() throws {
+        let fixture = try makeProjectFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+
+        let binDir = fixture.directory.appendingPathComponent("bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: binDir, withIntermediateDirectories: true)
+        let fakeCompiler = binDir.appendingPathComponent("secretcompiler")
+        try writeFakeCompiler(
+            to: fakeCompiler,
+            body: """
+            #!/bin/sh
+            if [ "$1" = "version" ] && [ "$2" = "--json" ]; then
+              echo '{"version":"0.4.1"}'
+              exit 0
+            fi
+            case " $* " in
+              *" --require-classification "*) echo "require classification forwarded" >&2; exit 0 ;;
+              *) echo "missing require classification flag: $*" >&2; exit 9 ;;
+            esac
+            """
+        )
+
+        let digest = sha256Hex(of: try Data(contentsOf: fakeCompiler))
+        let result = try runRunner(
+            command: "seal",
+            projectRoot: fixture.directory,
+            extraArguments: ["--require-classification"],
+            extraEnvironment: [
+                "PATH": "\(binDir.path):/usr/bin:/bin:/usr/sbin:/sbin",
+                "SECRETSKIT_CLI_SHA256": digest,
+                "SECRETS_OUTPUT_PATH": fixture.directory.appendingPathComponent("Secrets.sealed").path
+            ]
+        )
+
+        XCTAssertEqual(result.status, 0, result.stderr)
+        XCTAssertTrue(result.stderr.contains("require classification forwarded"), result.stderr)
+    }
+
     private struct RunnerResult {
         let status: Int32
         let stdout: String
@@ -79,7 +117,7 @@ final class RunnerPolicyTests: XCTestCase {
         {
           "cli": {
             "policy": "strict",
-            "minVersion": "0.3.1"
+            "minVersion": "0.4.1"
           }
         }
         """.utf8).write(to: config)
@@ -91,10 +129,15 @@ final class RunnerPolicyTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
     }
 
-    private func runRunner(command: String, projectRoot: URL, extraEnvironment: [String: String]) throws -> RunnerResult {
+    private func runRunner(
+        command: String,
+        projectRoot: URL,
+        extraArguments: [String] = [],
+        extraEnvironment: [String: String]
+    ) throws -> RunnerResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = [runnerScript.path, command]
+        process.arguments = [runnerScript.path, command] + extraArguments
 
         var environment = ProcessInfo.processInfo.environment
         for key in [

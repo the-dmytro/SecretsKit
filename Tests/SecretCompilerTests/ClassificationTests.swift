@@ -62,6 +62,28 @@ final class ClassificationTests: XCTestCase {
         XCTAssertFalse(raw.contains("should-not-ship"))
     }
 
+    func testServerOnlyOnlySchemaDoesNotRequireProviderSource() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let schema = dir.appendingPathComponent("Secrets.schema.json")
+        let output = dir.appendingPathComponent("Secrets.sealed")
+        try Data(#"{ "version": 1, "keys": { "SERVER_TOKEN": { "required": true, "classification": "serverOnly" } } }"#.utf8).write(to: schema)
+
+        let args = CLIArguments(command: "seal", options: [
+            "schema": schema.path,
+            "provider": "file",
+            "output": output.path
+        ])
+
+        XCTAssertEqual(try runSeal(args: args, env: [:]), 0)
+
+        let sealed = try JSONDecoder().decode(SealedSecretsV2.self, from: try Data(contentsOf: output))
+        XCTAssertEqual(sealed.format, "OBF3")
+        XCTAssertTrue(sealed.entries.isEmpty)
+    }
+
     func testServerOnlyRoutedViaOverrideAborts() throws {
         let fixture = try makeFixture(
             schemaJSON: #"{ "version": 1, "keys": { "SERVER_TOKEN": { "classification": "serverOnly" } } }"#,

@@ -225,6 +225,14 @@ private func printClassificationReport(_ classified: ClassifiedKeys, schema: Sec
     FileHandle.standardError.write(Data((lines.joined(separator: "\n") + "\n").utf8))
 }
 
+private func writeSealedData(_ data: Data, to outputPath: String) throws {
+    let outputURL = URL(fileURLWithPath: outputPath)
+    try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+    try data.write(to: outputURL, options: [.atomic])
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: outputURL.path)
+    print("Secrets sealed to \(outputURL.path)")
+}
+
 private func runValidate(args: CLIArguments, env: [String: String]) throws -> Int32 {
     let config = try loadConfig(from: args, env: env)
     let schema = try loadSchema(from: args, env: env, config: config)
@@ -293,6 +301,15 @@ func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 {
     )
     printClassificationReport(classified, schema: schema)
     let keys = classified.bundle
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+
+    if keys.isEmpty {
+        let data = try encoder.encode(SealedSecretsV2(version: 2, format: "OBF3", entries: [:]))
+        try writeSealedData(data, to: outputPath)
+        return 0
+    }
+
     let serverOnlySet = Set(classified.serverOnly)
     let required = requiredKeys(schema: schema, override: requiredOverride).filter { !serverOnlySet.contains($0) }
     let provider = try makeProvider(from: args, env: env, config: config, requiredKeys: required)
@@ -324,9 +341,6 @@ func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 {
     if hasErrors {
         return 1
     }
-
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
 
     let obfuscatedKeys = keys.filter { schema?.shouldObfuscate($0) ?? true }
     let data: Data
@@ -368,12 +382,7 @@ func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 {
         throw SecretCompilerError.legacyOBF2RequiresExplicitOptIn
     }
 
-    let outputURL = URL(fileURLWithPath: outputPath)
-    try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
-    try data.write(to: outputURL, options: [.atomic])
-    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: outputURL.path)
-
-    print("Secrets sealed to \(outputURL.path)")
+    try writeSealedData(data, to: outputPath)
     return 0
 }
 
