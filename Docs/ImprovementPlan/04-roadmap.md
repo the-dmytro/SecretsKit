@@ -38,8 +38,9 @@ secret; Vault refuses plaintext HTTP by default; `swift test` runs the new suite
 Removes the cryptographic theater and the supply-chain hole. The bundled format changed (`OBF3`,
 sealed `version` 2); the runtime gates on `format` and still reads legacy `OBF2`.
 
-Completed 2026-06-13; see [`CHANGELOG.md`](../../CHANGELOG.md). **Manifest signing (M4) is deferred** —
-see below.
+Completed 2026-06-13; see [`CHANGELOG.md`](../../CHANGELOG.md). 0.3.1 tightened the rollout by
+making legacy `OBF2` sealing explicit opt-in, validating Vault path segments, and adding runner
+policy regressions. **Manifest signing (M4) is deferred** — see below.
 
 - [x] **Separate key from ciphertext.** `secretcompiler generate-key` emits the key as a Swift source
       compiled into the app binary; `seal --key-material` writes a keyless `OBF3` resource
@@ -56,7 +57,8 @@ see below.
 - [x] **Provider hardening.** Vault rejects non-string KV values; Vault timeout clamped to 1–60s;
       `.xcconfig` warns on interpolation/conditionals it cannot evaluate. (M2, M3 · Decision 6)
 - [x] **Security regression suite.** Nonce uniqueness, key-name domain separation, key-required vs.
-      keyless reads, legacy `OBF2` read-back, key-material round-trip (25 tests total). (L2)
+      keyless reads, legacy `OBF2` read-back, key-material round-trip, strict runner digest behavior,
+      and Vault path validation (31 tests total as of 0.3.1). (L2)
 - [ ] **Sign the manifest (Ed25519)** — **deferred.** Integrity (not secrecy); deliberately held back
       to avoid CI signing-key management before it is needed. Pull forward when wanted. (M4 · Decision 2)
 

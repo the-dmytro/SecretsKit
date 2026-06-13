@@ -45,8 +45,9 @@ secretcompiler generate-key \
 ```
 - Add `AppObfKey.swift` to your app target (it contains the key, not your secrets).
 - Keep `AppObfKey.material` available to the seal step, e.g. export `SECRETS_OBF_KEY_MATERIAL` in the
-  seal wrapper, or pass `--key-material Config/AppObfKey.material`. Without it, `seal` falls back to the
-  deprecated `OBF2` format.
+  seal wrapper, or pass `--key-material Config/AppObfKey.material`. Without it, `seal` refuses to write
+  obfuscated entries. Use `--legacy-obf2` / `SECRETSKIT_ALLOW_LEGACY_OBF2=1` only for temporary
+  migration builds that must still emit deprecated `OBF2`.
 
 ## 6) Runtime usage
 ```swift

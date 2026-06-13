@@ -142,11 +142,12 @@ that happens to be shadowed by a later one fails silently. Minor, but worth a di
 
 ## Summary table
 
-> **Status (0.3.0):** Phase 0 fixed H1, H2, M1, M5, H3, L1, L2. Phase 1 fixed **C1, C2** (the critical
-> pair — `OBF3` separates key from ciphertext and uses per-entry nonces), **H4** (strict runner),
-> **M2, M3** (provider hardening). **M4** (manifest signing) is intentionally **deferred**. Remaining:
-> M4, and the Phase 2 classification work (L3). The findings below are kept as the original analysis;
-> see [`CHANGELOG.md`](../../CHANGELOG.md) and [04-roadmap.md](04-roadmap.md) for what shipped.
+> **Status (0.3.1):** Phase 0 fixed H1, H2, M1, M5, H3, L1, L2. Phase 1 fixed **C1, C2** (the critical
+> pair — `OBF3` separates key from ciphertext and uses per-entry nonces), **H4** (strict runner, with
+> digest-pinned PATH handling tightened in 0.3.1), **M2, M3** (provider hardening, including Vault path
+> validation in 0.3.1). **M4** (manifest signing) is intentionally **deferred**. Remaining: M4, and the
+> Phase 2 classification work (L3). The findings below are kept as the original analysis; see
+> [`CHANGELOG.md`](../../CHANGELOG.md) and [04-roadmap.md](04-roadmap.md) for what shipped.
 
 | ID | Severity | One-line | Phase |
 |----|----------|----------|-------|

@@ -44,15 +44,16 @@ The runner defaults to **`strict`** (set `cli.policy` in the config, or `SECRETS
 - **`strict`** (default, recommended for builds that process plaintext secrets):
   - Resolves the compiler ref from `Package.resolved`; **no silent `main` fallback** — fails closed if
     no ref is resolvable.
-  - Refuses an ambient `SECRETSKIT_CLI_PATH` or `PATH` `secretcompiler` **unless** `SECRETSKIT_CLI_SHA256`
-    matches its digest; otherwise builds the pinned ref from source.
+  - Refuses an ambient `SECRETSKIT_CLI_PATH` or `PATH` `secretcompiler` **unless**
+    `SECRETSKIT_CLI_SHA256` matches its digest. If a PATH binary is present but not digest-pinned,
+    strict mode fails closed instead of continuing past it.
   - Verifies the checked-out revision equals the resolved revision after bootstrap.
 - **`compatible`** (opt-down, lower assurance): the previous flexible behavior — explicit path, then
   `PATH` binary, then cached source build, with a `main` fallback.
 
 ### Tool resolution order
 - `strict`: digest-pinned `SECRETSKIT_CLI_PATH` → digest-pinned `PATH` binary → cached/bootstrapped
-  build of the locked ref.
+  build of the locked ref only when no ambient `PATH` compiler is present.
 - `compatible`: `SECRETSKIT_CLI_PATH` → `PATH` binary → cached source build → `main`.
 
 If none is available, the runner prints actionable instructions.

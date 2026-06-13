@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.1 — Unreleased
+
+Security hardening patch for the 0.3.x Phase 1 rollout.
+
+### Changed
+- `secretcompiler seal` no longer silently falls back to legacy `OBF2` for obfuscated entries when
+  key material is missing. Pass `--key-material` / `SECRETS_OBF_KEY_MATERIAL` for `OBF3`; use
+  `--legacy-obf2` or `SECRETSKIT_ALLOW_LEGACY_OBF2=1` only as an explicit migration escape hatch.
+- Vault request paths are now built from validated path segments and percent-encoded before request
+  construction. Query delimiters, fragments, control characters, relative segments, and empty path
+  segments are rejected.
+- Runner `strict` mode now fails closed when a `secretcompiler` exists on `PATH` without a matching
+  `SECRETSKIT_CLI_SHA256`, instead of silently ignoring it and continuing.
+
+### Added
+- Regression tests for the new seal default, explicit legacy opt-in, Vault path validation/encoding,
+  and strict runner digest behavior.
+
 ## 0.3.0 — Unreleased
 
 Phase 1 of the improvement plan: the `OBF3` format, which fixes the two critical `OBF2` flaws — the

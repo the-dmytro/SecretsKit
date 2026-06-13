@@ -15,6 +15,7 @@ enum SecretCompilerError: Error {
     case vaultInvalidResponse(String)
     case vaultInsecureTransport(String)
     case invalidKeyMaterial(String)
+    case legacyOBF2RequiresExplicitOptIn
     case autoProviderFailed([AutoProviderAttempt])
 }
 
@@ -47,6 +48,8 @@ extension SecretCompilerError: CustomStringConvertible {
             return "Insecure Vault transport: \(address)"
         case .invalidKeyMaterial(let detail):
             return "Invalid obfuscation key material: \(detail)"
+        case .legacyOBF2RequiresExplicitOptIn:
+            return "Legacy OBF2 sealing requires explicit opt-in"
         case .autoProviderFailed:
             return "Auto provider failed"
         }
@@ -240,6 +243,83 @@ func validateVaultTransport(address: String, allowInsecureHTTP: Bool) throws {
     }
 }
 
+func buildVaultRequestPath(mount: String, path: String, kvVersion: Int) throws -> String {
+    let mountSegments = try vaultPathSegments(mount, field: "mount", allowEmpty: true)
+    let pathSegments = try vaultPathSegments(path, field: "path", allowEmpty: false)
+
+    let requestSegments: [String]
+    if mountSegments.isEmpty {
+        requestSegments = pathSegments
+    } else if pathSegments.starts(with: mountSegments) {
+        requestSegments = pathSegments
+    } else if kvVersion == 2 {
+        requestSegments = mountSegments + ["data"] + pathSegments
+    } else {
+        requestSegments = mountSegments + pathSegments
+    }
+
+    return try requestSegments.map(percentEncodedVaultPathSegment).joined(separator: "/")
+}
+
+func buildVaultURL(address: String, requestPath: String) throws -> URL {
+    let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard var components = URLComponents(string: trimmed),
+          components.scheme != nil,
+          components.host != nil else {
+        throw SecretCompilerError.vaultRequestFailed("Invalid Vault address: \(address)")
+    }
+    guard components.query == nil, components.fragment == nil else {
+        throw SecretCompilerError.vaultRequestFailed("Vault address must not contain query or fragment")
+    }
+
+    let basePath = components.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    let apiPath = basePath.isEmpty ? "v1/\(requestPath)" : "\(basePath)/v1/\(requestPath)"
+    components.percentEncodedPath = "/" + apiPath
+
+    guard let url = components.url else {
+        throw SecretCompilerError.vaultRequestFailed("Invalid Vault URL")
+    }
+    return url
+}
+
+private func vaultPathSegments(_ raw: String, field: String, allowEmpty: Bool) throws -> [String] {
+    let trimmed = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    if trimmed.isEmpty {
+        if allowEmpty {
+            return []
+        }
+        throw SecretCompilerError.vaultRequestFailed("Vault \(field) must not be empty")
+    }
+
+    let parts = trimmed.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+    guard !parts.contains(where: \.isEmpty) else {
+        throw SecretCompilerError.vaultRequestFailed("Vault \(field) must not contain empty path segments")
+    }
+
+    for part in parts {
+        if part == "." || part == ".." {
+            throw SecretCompilerError.vaultRequestFailed("Vault \(field) must not contain relative path segments")
+        }
+        if part.contains("?") || part.contains("#") {
+            throw SecretCompilerError.vaultRequestFailed("Vault \(field) must not contain query or fragment delimiters")
+        }
+        if part.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7f }) {
+            throw SecretCompilerError.vaultRequestFailed("Vault \(field) must not contain control characters")
+        }
+    }
+
+    return parts
+}
+
+private func percentEncodedVaultPathSegment(_ segment: String) throws -> String {
+    var allowed = CharacterSet.urlPathAllowed
+    allowed.remove(charactersIn: "/?#%")
+    guard let encoded = segment.addingPercentEncoding(withAllowedCharacters: allowed) else {
+        throw SecretCompilerError.vaultRequestFailed("Invalid Vault path segment")
+    }
+    return encoded
+}
+
 struct VaultSecretsProvider: SecretsProvider {
     let address: String
     let token: String
@@ -251,12 +331,7 @@ struct VaultSecretsProvider: SecretsProvider {
     var name: String { "vault" }
 
     func loadSecrets(for keys: [String]) throws -> [String: String] {
-        let baseAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let urlString = baseAddress + "/v1/" + requestPath
-        guard let url = URL(string: urlString) else {
-            throw SecretCompilerError.vaultRequestFailed("Invalid Vault URL")
-        }
+        let url = try buildVaultURL(address: address, requestPath: requestPath)
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"

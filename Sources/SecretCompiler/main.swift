@@ -2,15 +2,17 @@
 import Foundation
 import SecretsRuntime
 
-private let defaultPlaceholderPattern = "(YOUR_.*|__.*__|PLACEHOLDER|REPLACE_ME)"
-
 private func parseCsv(_ value: String) -> [String] {
     return value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
 }
 
 private func placeholderRegex(from value: String?) -> NSRegularExpression {
-    let pattern = value ?? defaultPlaceholderPattern
-    return (try? NSRegularExpression(pattern: pattern, options: [])) ?? (try? NSRegularExpression(pattern: defaultPlaceholderPattern, options: []))!
+    let fallbackPattern = "(YOUR_.*|__.*__|PLACEHOLDER|REPLACE_ME)"
+    let pattern = value?.isEmpty == false ? value! : fallbackPattern
+    if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+        return regex
+    }
+    return try! NSRegularExpression(pattern: fallbackPattern, options: [])
 }
 
 private func isPlaceholder(_ value: String, regex: NSRegularExpression) -> Bool {
@@ -83,18 +85,7 @@ private func resolveVaultSettings(env: [String: String], config: SecretsKitConfi
         throw SecretCompilerError.missingVaultConfig(pathEnv)
     }
 
-    let trimmedMount = mount.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    let trimmedPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    let requestPath: String
-    if trimmedMount.isEmpty {
-        requestPath = trimmedPath
-    } else if trimmedPath.hasPrefix(trimmedMount + "/") {
-        requestPath = trimmedPath
-    } else if kvVersion == 2 {
-        requestPath = "\(trimmedMount)/data/\(trimmedPath)"
-    } else {
-        requestPath = "\(trimmedMount)/\(trimmedPath)"
-    }
+    let requestPath = try buildVaultRequestPath(mount: mount, path: path, kvVersion: kvVersion)
 
     return VaultSettings(
         address: address,
@@ -197,7 +188,7 @@ private func runValidate(args: CLIArguments, env: [String: String]) throws -> In
     return 0
 }
 
-private func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 {
+func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 {
     let config = try loadConfig(from: args, env: env)
     let schema = try loadSchema(from: args, env: env, config: config)
     let requiredOverride = args.option("required-keys") ?? env["SECRETS_REQUIRED_KEYS"]
@@ -244,6 +235,7 @@ private func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
 
+    let obfuscatedKeys = keys.filter { schema?.shouldObfuscate($0) ?? true }
     let data: Data
     let keyMaterialPath = args.option("key-material") ?? env["SECRETS_OBF_KEY_MATERIAL"]
     if let keyMaterialPath {
@@ -259,9 +251,15 @@ private func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 
             }
         }
         data = try encoder.encode(SealedSecretsV2(version: 2, format: "OBF3", entries: entries))
-    } else {
-        // Legacy OBF2: obfuscation material embedded in the file. Kept for migration; deprecated.
-        FileHandle.standardError.write(Data("warning: sealing in legacy OBF2 format (obfuscation key embedded in the bundle). Run `secretcompiler generate-key` and pass --key-material to produce keyless OBF3.\n".utf8))
+    } else if obfuscatedKeys.isEmpty {
+        var entries: [String: SealedEntry] = [:]
+        for key in keys {
+            entries[key] = SealedEntry.plain(secrets[key] ?? "")
+        }
+        data = try encoder.encode(SealedSecretsV2(version: 2, format: "OBF3", entries: entries))
+    } else if explicitLegacyOBF2OptIn(args: args, env: env) {
+        // Legacy OBF2: obfuscation material embedded in the file. Kept only for explicit migration.
+        FileHandle.standardError.write(Data("warning: sealing in legacy OBF2 format (obfuscation key embedded in the bundle). Generate OBF3 key material and pass --key-material as soon as possible.\n".utf8))
         let material = try SecretObfuscationMaterial.generate()
         var sealedMap: [String: String] = [:]
         for key in keys {
@@ -273,6 +271,8 @@ private func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 
             }
         }
         data = try encoder.encode(SealedSecrets(version: 1, format: "OBF2", obfuscation: material, secrets: sealedMap))
+    } else {
+        throw SecretCompilerError.legacyOBF2RequiresExplicitOptIn
     }
 
     let outputURL = URL(fileURLWithPath: outputPath)
@@ -282,6 +282,10 @@ private func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 
 
     print("Secrets sealed to \(outputURL.path)")
     return 0
+}
+
+private func explicitLegacyOBF2OptIn(args: CLIArguments, env: [String: String]) -> Bool {
+    return parseBool(args.option("legacy-obf2") ?? env["SECRETSKIT_ALLOW_LEGACY_OBF2"] ?? env["SECRETS_ALLOW_LEGACY_OBF2"]) ?? false
 }
 
 private func runGenerateKey(args: CLIArguments, env: [String: String]) throws -> Int32 {
@@ -316,12 +320,14 @@ private func printUsage() {
     let message = """
     Usage:
       secretcompiler validate --config <path> --schema <path> --provider <file|env|vault|auto> --source <path>
-      secretcompiler seal --config <path> --schema <path> --provider <file|env|vault|auto> --source <path> --output <path> [--key-material <path>]
+      secretcompiler seal --config <path> --schema <path> --provider <file|env|vault|auto> --source <path> --output <path> --key-material <path>
+      secretcompiler seal ... --legacy-obf2   # explicit migration-only fallback
       secretcompiler generate-key --swift-output <path> [--material-output <path>] [--symbol <name>]
       secretcompiler version [--json]
 
     Notes:
-      seal writes keyless OBF3 when --key-material is given; otherwise it writes legacy OBF2 (deprecated).
+      seal writes keyless OBF3. Obfuscated entries require --key-material; legacy OBF2 requires
+      explicit --legacy-obf2 or SECRETSKIT_ALLOW_LEGACY_OBF2=1.
       generate-key produces the obfuscation key once: a Swift file to compile into your app, plus a
       .material sidecar to pass to seal.
 
@@ -344,6 +350,7 @@ private func printUsage() {
       SECRETS_VAULT_TIMEOUT
       SECRETS_VAULT_ALLOW_INSECURE_HTTP
       SECRETS_OBF_KEY_MATERIAL
+      SECRETSKIT_ALLOW_LEGACY_OBF2
       SECRETS_OBF_KEY_SWIFT_OUTPUT
       SECRETS_OBF_KEY_SYMBOL
     """
@@ -407,6 +414,9 @@ func main() -> Int32 {
         return 1
     } catch SecretCompilerError.invalidKeyMaterial(let detail) {
         printError("Invalid obfuscation key material: \(detail)")
+        return 1
+    } catch SecretCompilerError.legacyOBF2RequiresExplicitOptIn {
+        printError("Refusing to seal obfuscated entries in legacy OBF2 by default. Run `secretcompiler generate-key` and pass --key-material for OBF3, or set --legacy-obf2 for migration only.")
         return 1
     } catch SecretCompilerError.autoProviderFailed(let attempts) {
         printError("Auto provider failed to satisfy required keys")

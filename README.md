@@ -41,7 +41,22 @@ It helps keep secrets **out of the repo** by producing a bundled `Secrets.sealed
 - Copy `IntegrationTemplates/Scripts/SecretsKit/` → `Scripts/SecretsKit/`
 - `chmod +x Scripts/SecretsKit/*.sh`
 
-5) Add Xcode build phases (per target):
+5) Install the tool (once per machine) or use Homebrew:
+```
+./Scripts/SecretsKit/secretskit.sh install
+```
+
+6) Generate the obfuscation key once:
+```
+secretcompiler generate-key \
+  --swift-output Sources/Generated/AppObfKey.swift \
+  --material-output Config/AppObfKey.material
+```
+- Add the Swift file to your app target.
+- Make `AppObfKey.material` available to the seal phase via `SECRETS_OBF_KEY_MATERIAL` or
+  `--key-material`.
+
+7) Add Xcode build phases (per target):
 - **Validate Secrets** (early):
   - `${SRCROOT}/Scripts/SecretsKit/validate_secrets.sh` (recommended)
   - or `${SRCROOT}/Scripts/SecretsKit/secretskit.sh validate`
@@ -50,11 +65,6 @@ It helps keep secrets **out of the repo** by producing a bundled `Secrets.sealed
   - or `${SRCROOT}/Scripts/SecretsKit/secretskit.sh seal`
 
 Tip: put any `SECRETS_*` overrides inside the wrapper scripts to avoid Xcode script escaping issues.
-
-6) Install the tool (once per machine) or use Homebrew:
-```
-./Scripts/SecretsKit/secretskit.sh install
-```
 
 ## Providers
 
@@ -102,7 +112,8 @@ let optionalKey = secrets.optionalValue(for: "EXAMPLE_API_KEY")
 
 The sealed file (`OBF3`) contains only ciphertext; the obfuscation key lives in the app binary, not
 the bundle. Generate it once with `secretcompiler generate-key` and compile the emitted Swift file
-into your target. (Legacy `OBF2` bundles still load without a key — see `CHANGELOG.md`.)
+into your target. Sealing obfuscated entries now requires that key material; legacy `OBF2` output
+requires explicit `--legacy-obf2` / `SECRETSKIT_ALLOW_LEGACY_OBF2=1` migration opt-in.
 
 ## Configuration / overrides
 Common environment overrides:
@@ -110,6 +121,8 @@ Common environment overrides:
 - `SECRETS_PROVIDER` (`env|file|vault|auto`)
 - `SECRETS_SOURCE_PATH` (for `file`)
 - `SECRETS_OUTPUT_PATH` (for `seal`)
+- `SECRETS_OBF_KEY_MATERIAL` (for `OBF3` seal)
+- `SECRETSKIT_ALLOW_LEGACY_OBF2=1` (migration-only fallback)
 
 ## Security notes
 - The CLI never prints secret values.

@@ -16,3 +16,8 @@ SecretsKit supports HashiCorp Vault KV v1/v2 for build-time secrets.
 ## Notes
 - Values are read in-memory only.
 - The CLI never prints secret values in logs.
+- `VAULT_ADDR` must be `https` unless `SECRETS_VAULT_ALLOW_INSECURE_HTTP=1` is set for local
+  development.
+- Mount and path are treated as path segments: query delimiters, fragments, control characters,
+  relative segments, and empty segments are rejected; valid characters that need escaping are
+  percent-encoded.

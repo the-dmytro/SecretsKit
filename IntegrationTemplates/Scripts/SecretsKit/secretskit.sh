@@ -244,7 +244,7 @@ resolve_cli() {
 
   if [ -n "${SECRETSKIT_CLI_PATH:-}" ] && [ -x "${SECRETSKIT_CLI_PATH}" ]; then
     if [ "${policy}" = "strict" ] && ! digest_ok "${SECRETSKIT_CLI_PATH}"; then
-      die "strict policy: refusing SECRETSKIT_CLI_PATH unless SECRETSKIT_CLI_SHA256 matches its digest. Use a cached source build, set the digest, or opt down to cli.policy=compatible."
+      die "strict policy: refusing SECRETSKIT_CLI_PATH unless SECRETSKIT_CLI_SHA256 matches its digest. Unset SECRETSKIT_CLI_PATH, set the digest, or opt down to cli.policy=compatible."
     fi
     echo "${SECRETSKIT_CLI_PATH}"
     return 0
@@ -253,11 +253,13 @@ resolve_cli() {
   if command -v secretcompiler >/dev/null 2>&1; then
     local pathbin
     pathbin="$(command -v secretcompiler)"
+    if [ "${policy}" = "strict" ] && ! digest_ok "${pathbin}"; then
+      die "strict policy: refusing PATH secretcompiler unless SECRETSKIT_CLI_SHA256 matches its digest. Remove it from PATH, set the digest, or opt down to cli.policy=compatible."
+    fi
     if [ "${policy}" != "strict" ] || digest_ok "${pathbin}"; then
       echo "${pathbin}"
       return 0
     fi
-    # strict + no digest match: ignore the ambient PATH binary and fall through to a pinned build.
   fi
 
   local ref
