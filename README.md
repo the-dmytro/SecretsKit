@@ -9,6 +9,29 @@ It helps keep secrets **out of the repo** by producing a bundled `Secrets.sealed
 - ✅ Supports multiple build-time secret sources: `env`, `file`, `vault`, and `auto`.
 - ❌ Not a guarantee of secrecy against reverse engineering. Only embed secrets that are safe to ship in a client bundle.
 
+## Key classification
+Each schema key may declare a `classification`, making the bundle-or-not decision explicit:
+
+- `public` — safe to ship as-is (e.g. a published client id). Bundled, not obfuscated.
+- `clientBundled` — local-only; accepts eventual disclosure. Bundled and obfuscated. **Default** when a
+  key declares no classification.
+- `serverOnly` — a real secret that must never reach a device. **Never bundled** — `seal` excludes it
+  and refuses if you explicitly route it in. Fetch these via a backend (see
+  [`Docs/ServerMediatedSecrets.md`](Docs/ServerMediatedSecrets.md)).
+
+`seal` prints a classification report (keys → class, never values). Pass `--require-classification` to
+fail the build on any key that hasn't declared one.
+
+```json
+{
+  "keys": {
+    "EXAMPLE_CLIENT_ID": { "classification": "public" },
+    "EXAMPLE_API_KEY":    { "classification": "clientBundled" },
+    "EXAMPLE_SERVER_TOKEN": { "classification": "serverOnly" }
+  }
+}
+```
+
 ## Components
 - **Runtime library**: `SecretsRuntime`
   - Loads `Secrets.sealed` from the app bundle and returns values on demand.

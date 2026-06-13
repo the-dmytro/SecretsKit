@@ -1,11 +1,25 @@
 import Foundation
 
+/// How a key may be handled at build time.
+///
+/// - `public`: safe to ship as-is (e.g. a published client id). Bundled, not obfuscated by default.
+/// - `clientBundled` (local-only): lives only on the device; accepts eventual disclosure. Bundled and
+///   obfuscated. This is the default when a key declares no classification.
+/// - `serverOnly`: a real secret that must never reach a device. Never bundled; `seal` excludes it and
+///   refuses if it is explicitly routed into the bundle.
+enum SecretClassification: String, Codable {
+    case `public`
+    case clientBundled
+    case serverOnly
+}
+
 struct SecretsSchema: Codable {
     struct KeySpec: Codable {
         let required: Bool?
         let obfuscate: Bool?
         let description: String?
         let platforms: [String]?
+        let classification: String?
     }
 
     let version: Int?
@@ -37,8 +51,17 @@ struct SecretsSchema: Codable {
         return requiredKeys()
     }
 
+    /// The raw `classification` string declared for a key, if any. Validated/parsed by the caller.
+    func rawClassification(for key: String) -> String? {
+        return keys?[key]?.classification
+    }
+
     func shouldObfuscate(_ key: String) -> Bool {
-        guard let spec = keys?[key] else { return true }
-        return spec.obfuscate ?? true
+        let spec = keys?[key]
+        // Public values ship as-is unless explicitly overridden; everything else obfuscates by default.
+        if rawClassification(for: key) == SecretClassification.public.rawValue {
+            return spec?.obfuscate ?? false
+        }
+        return spec?.obfuscate ?? true
     }
 }

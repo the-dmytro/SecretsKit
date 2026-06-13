@@ -21,3 +21,12 @@ SecretsKit supports HashiCorp Vault KV v1/v2 for build-time secrets.
 - Mount and path are treated as path segments: query delimiters, fragments, control characters,
   relative segments, and empty segments are rejected; valid characters that need escaping are
   percent-encoded.
+
+## Short-lived credentials (recommended)
+Prefer CI-native, short-lived Vault auth (e.g. OIDC/JWT) over a long-lived `VAULT_TOKEN` kept in a
+shell profile. Scope the policy to read-only on the specific path with a short TTL.
+
+## Scope: client-bundled values only
+The `vault` provider feeds the build-time bundle, so only point it at `public`/`clientBundled` values.
+A `serverOnly` secret must never reach `Secrets.sealed` (the build refuses it) — read those from Vault
+on your **backend** at request time instead. See [`ServerMediatedSecrets.md`](ServerMediatedSecrets.md).

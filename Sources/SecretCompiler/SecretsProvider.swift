@@ -16,6 +16,9 @@ enum SecretCompilerError: Error {
     case vaultInsecureTransport(String)
     case invalidKeyMaterial(String)
     case legacyOBF2RequiresExplicitOptIn
+    case missingClassification([String])
+    case invalidClassification(String)
+    case serverOnlyKeysRouted([String])
     case autoProviderFailed([AutoProviderAttempt])
 }
 
@@ -50,6 +53,12 @@ extension SecretCompilerError: CustomStringConvertible {
             return "Invalid obfuscation key material: \(detail)"
         case .legacyOBF2RequiresExplicitOptIn:
             return "Legacy OBF2 sealing requires explicit opt-in"
+        case .missingClassification(let keys):
+            return "Keys missing a classification: \(keys.joined(separator: ", "))"
+        case .invalidClassification(let raw):
+            return "Invalid classification '\(raw)' (use public, clientBundled, or serverOnly)"
+        case .serverOnlyKeysRouted(let keys):
+            return "serverOnly keys must not be bundled: \(keys.joined(separator: ", "))"
         case .autoProviderFailed:
             return "Auto provider failed"
         }

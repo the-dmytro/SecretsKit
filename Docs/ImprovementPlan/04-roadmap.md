@@ -87,22 +87,28 @@ Answer before starting Phase 2:
    fail, and *don't ship them at all* until the backend exists — which is itself the correct
    security outcome.
 
-### Work items
+### Work items — ✅ classification core done in 0.4.0
 
-- [ ] **Mandatory `classification` in schema v2**; `seal` fails on a missing class. (Decision 0) —
-      *do this part even if you skip Tier B; it is the keystone guarantee.*
-- [ ] **Build-fail guard:** any `serverOnly` key routed to the bundle aborts `seal` with a clear
-      error. (Decision 0)
-- [ ] **Classification report** emitted by `seal` (keys + classes, never values). (Decision 0)
-- [ ] **Tier B client SDK slot + backend contract**: token-exchange shape, App Attest/DeviceCheck
-      gating, TTL/rotation/revocation guidance, reference docs. (Decision 3) — *defer the reference
-      backend implementation if needed, but define the contract.*
-- [ ] **Vault short-lived auth guidance** (OIDC/JWT CI auth over long-lived `VAULT_TOKEN`); align with
-      least-privilege, path-scoped policies. (Decision 3, also in audit)
+Decision-gate outcome (from the project owner): no `serverOnly` secrets and no backend today, but the
+option must exist and `clientBundled`/local-only must be a first-class, *educated* choice. So the
+classification core shipped; **Tier B (token-exchange client + reference backend) stays unbuilt**, with
+its contract documented so `serverOnly` keys have a real destination.
 
-Exit criteria: a `serverOnly` key cannot be sealed into the bundle under any configuration; every
-shipped key has a declared classification visible in the seal report; `serverOnly` keys have a
-documented runtime path that does not bundle them.
+- [x] **`classification` in schema** (`public` | `clientBundled` | `serverOnly`). Made **optional with a
+      `clientBundled` default** rather than hard-mandatory, for graceful migration; opt into strict with
+      `--require-classification` / `SECRETSKIT_REQUIRE_CLASSIFICATION`. (Decision 0)
+- [x] **Build-fail guard:** `seal` excludes `serverOnly` keys and aborts if one is explicitly routed in.
+      (Decision 0)
+- [x] **Classification report** emitted by `seal` (keys + classes, never values). (Decision 0)
+- [~] **Tier B contract documented** in [`Docs/ServerMediatedSecrets.md`](../ServerMediatedSecrets.md)
+      (App Attest/DeviceCheck gating, short-lived/revocable tokens). Client SDK + reference backend
+      **deferred** until a backend + real secret exist. (Decision 3)
+- [x] **Vault short-lived auth guidance** (OIDC/JWT over long-lived `VAULT_TOKEN`) + client-bundled-only
+      scope note. (Decision 3)
+
+Exit criteria (met for the build-time guarantee): a `serverOnly` key cannot be sealed into the bundle
+(excluded by default, aborts if routed in); the seal report shows every bundled key's classification.
+Runtime token-exchange for `serverOnly` keys remains a documented-but-unbuilt contract by design.
 
 ## Sequencing summary
 

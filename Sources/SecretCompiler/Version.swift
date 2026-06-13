@@ -1,5 +1,5 @@
 import Foundation
 
 enum SecretsKitVersion {
-    static let current = "0.3.1"
+    static let current = "0.4.0"
 }

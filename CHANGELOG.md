@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4.0 — Unreleased
+
+Phase 2 of the improvement plan: **key classification** — the bundle-or-not decision becomes explicit
+and build-enforced, so a value you declare a true secret cannot be bundled by accident. Graceful: keys
+with no classification keep today's behavior.
+
+### Added
+- **`classification` per schema key**: `public` (bundled, not obfuscated), `clientBundled` (bundled +
+  obfuscated; the default when unset), or `serverOnly` (never bundled).
+- **`serverOnly` build-fail guard**: `seal` excludes `serverOnly` keys from the bundle and **aborts** if
+  one is explicitly routed in (e.g. named in `--required-keys`).
+- **Classification report**: `seal` prints `key → classification` (never values), marking `serverOnly`
+  keys as `NOT bundled`.
+- **`--require-classification` / `SECRETSKIT_REQUIRE_CLASSIFICATION`**: opt-in strict mode that fails the
+  build on any key without a declared classification.
+- **`Docs/ServerMediatedSecrets.md`**: the contract for `serverOnly` keys (App Attest/DeviceCheck-gated,
+  short-lived, revocable tokens) so they have a real destination instead of being downgraded.
+- Vault docs: short-lived (OIDC/JWT) auth guidance and the client-bundled-only scope note.
+- Tests: serverOnly exclusion + explicit-route abort, public→plain, require-classification, invalid
+  classification, unclassified→clientBundled default (37 tests total).
+
+### Changed
+- Obfuscation now defaults from classification: `public` keys ship as plain unless `obfuscate` is set
+  explicitly; everything else obfuscates by default (unchanged for existing schemas).
+
+### Migration
+No data migration: classification is optional and defaults to `clientBundled`, so existing schemas seal
+exactly as before. To adopt the guarantee, add `"classification": "..."` to each key (the example
+`Config/Secrets.schema.json` shows all three), and optionally turn on `--require-classification`.
+
 ## 0.3.1 — Unreleased
 
 Security hardening patch for the 0.3.x Phase 1 rollout.

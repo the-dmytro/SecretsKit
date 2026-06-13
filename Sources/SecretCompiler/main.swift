@@ -153,13 +153,97 @@ private func printError(_ message: String) {
     FileHandle.standardError.write(Data("error: \(message)\n".utf8))
 }
 
+private func parseClassification(_ raw: String) throws -> SecretClassification {
+    guard let classification = SecretClassification(rawValue: raw) else {
+        throw SecretCompilerError.invalidClassification(raw)
+    }
+    return classification
+}
+
+private struct ClassifiedKeys {
+    let bundle: [String]      // public + clientBundled: eligible for the sealed bundle
+    let serverOnly: [String]  // never bundled
+    let defaulted: [String]   // no classification declared; treated as clientBundled
+}
+
+/// Partitions keys by classification. `serverOnly` keys are excluded from the bundle; if they were
+/// explicitly routed in (e.g. a `--required-keys` override naming one), the operation aborts. Keys with
+/// no declared classification default to `clientBundled` unless `requireClassification` is set.
+private func classifyKeys(
+    _ keys: [String],
+    schema: SecretsSchema?,
+    requireClassification: Bool,
+    explicitlyRouted: Bool
+) throws -> ClassifiedKeys {
+    var bundle: [String] = []
+    var serverOnly: [String] = []
+    var defaulted: [String] = []
+    var missing: [String] = []
+
+    for key in keys.sorted() {
+        let classification: SecretClassification
+        if let raw = schema?.rawClassification(for: key) {
+            classification = try parseClassification(raw)
+        } else if requireClassification {
+            missing.append(key)
+            continue
+        } else {
+            classification = .clientBundled
+            defaulted.append(key)
+        }
+        switch classification {
+        case .serverOnly:
+            serverOnly.append(key)
+        case .public, .clientBundled:
+            bundle.append(key)
+        }
+    }
+
+    if !missing.isEmpty {
+        throw SecretCompilerError.missingClassification(missing)
+    }
+    if !serverOnly.isEmpty && explicitlyRouted {
+        throw SecretCompilerError.serverOnlyKeysRouted(serverOnly)
+    }
+    return ClassifiedKeys(bundle: bundle, serverOnly: serverOnly, defaulted: defaulted)
+}
+
+private func requireClassificationFlag(args: CLIArguments, env: [String: String]) -> Bool {
+    return parseBool(args.option("require-classification") ?? env["SECRETSKIT_REQUIRE_CLASSIFICATION"]) ?? false
+}
+
+/// Prints a key → classification report to stderr. Never prints secret values.
+private func printClassificationReport(_ classified: ClassifiedKeys, schema: SecretsSchema?) {
+    var lines = ["SecretsKit classification:"]
+    for key in classified.bundle {
+        let label = schema?.rawClassification(for: key) ?? "clientBundled (defaulted)"
+        lines.append("  \(key): \(label)")
+    }
+    for key in classified.serverOnly {
+        lines.append("  \(key): serverOnly — NOT bundled")
+    }
+    FileHandle.standardError.write(Data((lines.joined(separator: "\n") + "\n").utf8))
+}
+
 private func runValidate(args: CLIArguments, env: [String: String]) throws -> Int32 {
     let config = try loadConfig(from: args, env: env)
     let schema = try loadSchema(from: args, env: env, config: config)
     let requiredOverride = args.option("required-keys") ?? env["SECRETS_REQUIRED_KEYS"]
-    let keys = requiredKeys(schema: schema, override: requiredOverride)
-    if keys.isEmpty {
+    let declaredKeys = requiredKeys(schema: schema, override: requiredOverride)
+    if declaredKeys.isEmpty {
         throw SecretCompilerError.missingSchema
+    }
+
+    let classified = try classifyKeys(
+        declaredKeys,
+        schema: schema,
+        requireClassification: requireClassificationFlag(args: args, env: env),
+        explicitlyRouted: requiredOverride != nil
+    )
+    let keys = classified.bundle
+    if keys.isEmpty {
+        print("Secrets validation passed (no client-bundled keys to validate)")
+        return 0
     }
 
     let provider = try makeProvider(from: args, env: env, config: config, requiredKeys: keys)
@@ -192,8 +276,8 @@ func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 {
     let config = try loadConfig(from: args, env: env)
     let schema = try loadSchema(from: args, env: env, config: config)
     let requiredOverride = args.option("required-keys") ?? env["SECRETS_REQUIRED_KEYS"]
-    let keys = allKeys(schema: schema, requiredOverride: requiredOverride)
-    if keys.isEmpty {
+    let declaredKeys = allKeys(schema: schema, requiredOverride: requiredOverride)
+    if declaredKeys.isEmpty {
         throw SecretCompilerError.missingSchema
     }
 
@@ -201,7 +285,16 @@ func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 {
         throw SecretCompilerError.missingOutput
     }
 
-    let required = requiredKeys(schema: schema, override: requiredOverride)
+    let classified = try classifyKeys(
+        declaredKeys,
+        schema: schema,
+        requireClassification: requireClassificationFlag(args: args, env: env),
+        explicitlyRouted: requiredOverride != nil
+    )
+    printClassificationReport(classified, schema: schema)
+    let keys = classified.bundle
+    let serverOnlySet = Set(classified.serverOnly)
+    let required = requiredKeys(schema: schema, override: requiredOverride).filter { !serverOnlySet.contains($0) }
     let provider = try makeProvider(from: args, env: env, config: config, requiredKeys: required)
     let secrets = try provider.loadSecrets(for: keys)
     let regex = placeholderRegex(from: args.option("placeholder-regex") ?? env["SECRETS_PLACEHOLDER_REGEX"])
@@ -330,6 +423,8 @@ private func printUsage() {
       explicit --legacy-obf2 or SECRETSKIT_ALLOW_LEGACY_OBF2=1.
       generate-key produces the obfuscation key once: a Swift file to compile into your app, plus a
       .material sidecar to pass to seal.
+      Each key may declare a classification (public | clientBundled | serverOnly). serverOnly keys are
+      never bundled. Pass --require-classification to fail on any key without one.
 
     Environment:
       SECRETS_CONFIG_PATH
@@ -353,6 +448,7 @@ private func printUsage() {
       SECRETSKIT_ALLOW_LEGACY_OBF2
       SECRETS_OBF_KEY_SWIFT_OUTPUT
       SECRETS_OBF_KEY_SYMBOL
+      SECRETSKIT_REQUIRE_CLASSIFICATION
     """
     print(message)
 }
@@ -417,6 +513,15 @@ func main() -> Int32 {
         return 1
     } catch SecretCompilerError.legacyOBF2RequiresExplicitOptIn {
         printError("Refusing to seal obfuscated entries in legacy OBF2 by default. Run `secretcompiler generate-key` and pass --key-material for OBF3, or set --legacy-obf2 for migration only.")
+        return 1
+    } catch SecretCompilerError.missingClassification(let keys) {
+        printError("These keys need a classification (public | clientBundled | serverOnly): \(keys.joined(separator: ", "))")
+        return 1
+    } catch SecretCompilerError.invalidClassification(let raw) {
+        printError("Invalid classification '\(raw)'. Use public, clientBundled, or serverOnly.")
+        return 1
+    } catch SecretCompilerError.serverOnlyKeysRouted(let keys) {
+        printError("serverOnly keys must never be bundled: \(keys.joined(separator: ", ")). Remove them from the bundle scope or fetch them via a backend (see Docs/ServerMediatedSecrets.md).")
         return 1
     } catch SecretCompilerError.autoProviderFailed(let attempts) {
         printError("Auto provider failed to satisfy required keys")

@@ -7,6 +7,9 @@ Add the package and link `SecretsRuntime` to your iOS/watchOS targets.
 Create a schema file (committed, no values):
 - `Config/Secrets.schema.json`
 
+Optionally give each key a `classification` (`public` | `clientBundled` | `serverOnly`). `serverOnly`
+keys are never bundled. See the README's "Key classification" section.
+
 ## 3) Add a non-secret config file (committed)
 Create `Config/SecretsKit.config.json` with provider and paths. Example:
 ```json
