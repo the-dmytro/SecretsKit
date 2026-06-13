@@ -37,9 +37,22 @@ ${SRCROOT}/Scripts/SecretsKit/seal_secrets.sh
 Use `SECRETS_CONFIG_PATH` if the config lives outside `Config/SecretsKit.config.json`.
 If you need to export additional `SECRETS_*` values, do it inside the wrapper scripts.
 
-## Tool resolution order (runner)
-1) `SECRETSKIT_CLI_PATH` (explicit path)
-2) `secretcompiler` on `PATH` (Homebrew or manual install)
-3) cached source build (when present)
+## Compiler provenance policy
+
+The runner defaults to **`strict`** (set `cli.policy` in the config, or `SECRETSKIT_CLI_POLICY`):
+
+- **`strict`** (default, recommended for builds that process plaintext secrets):
+  - Resolves the compiler ref from `Package.resolved`; **no silent `main` fallback** — fails closed if
+    no ref is resolvable.
+  - Refuses an ambient `SECRETSKIT_CLI_PATH` or `PATH` `secretcompiler` **unless** `SECRETSKIT_CLI_SHA256`
+    matches its digest; otherwise builds the pinned ref from source.
+  - Verifies the checked-out revision equals the resolved revision after bootstrap.
+- **`compatible`** (opt-down, lower assurance): the previous flexible behavior — explicit path, then
+  `PATH` binary, then cached source build, with a `main` fallback.
+
+### Tool resolution order
+- `strict`: digest-pinned `SECRETSKIT_CLI_PATH` → digest-pinned `PATH` binary → cached/bootstrapped
+  build of the locked ref.
+- `compatible`: `SECRETSKIT_CLI_PATH` → `PATH` binary → cached source build → `main`.
 
 If none is available, the runner prints actionable instructions.

@@ -33,30 +33,36 @@ data migration was needed — only API migration, guided by deprecation warnings
 Exit criteria (met): no `fatalError` in the runtime value path; no code path returns a silently-empty
 secret; Vault refuses plaintext HTTP by default; `swift test` runs the new suites.
 
-## Phase 1 — Honest obfuscation + trustworthy build (≈ 1–2 weeks)
+## Phase 1 — Honest obfuscation + trustworthy build (≈ 1–2 weeks) — ✅ mostly done in 0.3.0
 
-Removes the cryptographic theater and the supply-chain hole. The bundled format changes, so bump the
-sealed `version` and gate the runtime on it.
+Removes the cryptographic theater and the supply-chain hole. The bundled format changed (`OBF3`,
+sealed `version` 2); the runtime gates on `format` and still reads legacy `OBF2`.
 
-- [ ] **Separate key from ciphertext.** Codegen the root key material into a compiled Swift source;
-      ship only ciphertext + per-entry nonce + tag in the resource. (C1 · Decision 1)
-- [ ] **Per-entry nonce + per-key HKDF domain separation** (`info = bundleId || keyName`). Add a test
-      that seals ≥2 values and asserts distinct nonces. (C2 · Decision 1)
-- [ ] **Sign the manifest (Ed25519)** at seal time; verify with embedded public key at load. (M4 ·
-      Decision 2)
-- [ ] **Rename for honesty.** `SecretObfuscator` stays; remove crypto-implying names from the public
-      surface (`ProtectedSecret`, "seal/encrypt" prose). (L1)
-- [ ] **Harden the runner to `strict` by default.** Lock the compiler ref from `Package.resolved`,
-      verify checkout revision, pin/verify ambient binaries by digest, kill the silent `main`
-      fallback; keep `compat` as documented opt-in. (H4 · Decision 5)
-- [ ] **Provider hardening.** Vault path via `URLComponents` + segment validation + bounded timeout +
-      reject non-string KV values; stricter/clearer `.xcconfig` handling. (M2, M3, L3 · Decision 6)
-- [ ] **Security regression suite.** Nonce uniqueness, manifest signature verification, runner rejects
-      mutable refs/unverified binaries, CLI never prints values. (L2)
+Completed 2026-06-13; see [`CHANGELOG.md`](../../CHANGELOG.md). **Manifest signing (M4) is deferred** —
+see below.
 
-Exit criteria: opening `Secrets.sealed` no longer yields the key; tampering with it fails
-verification; the runner will not seal with an unpinned compiler; the README's "not easy to extract"
-claim is once again literally true.
+- [x] **Separate key from ciphertext.** `secretcompiler generate-key` emits the key as a Swift source
+      compiled into the app binary; `seal --key-material` writes a keyless `OBF3` resource
+      (ciphertext + per-entry nonce + tag only). (C1 · Decision 1)
+- [x] **Per-entry nonce + per-key HKDF domain separation.** Fresh random nonce per entry; `info = key
+      name` (key-name only rather than `bundleId || keyName`, to avoid seal-time/runtime bundle-id
+      mismatch — the per-app unique seed already provides app scoping). Test asserts distinct nonces. (C2 · Decision 1)
+- [~] **Rename for honesty.** `OBF3` types/docs say "obfuscation"; the `xor`/`reverse` theater is gone;
+      README/docs state obfuscation-not-encryption. `ProtectedSecret` keeps its name but was made
+      honest in Phase 0. (L1)
+- [x] **Hardened the runner to `strict` by default.** Ref locked from `Package.resolved` (no `main`
+      fallback), ambient binaries digest-gated via `SECRETSKIT_CLI_SHA256`, checkout revision verified;
+      `compatible` kept as documented opt-down. (H4 · Decision 5)
+- [x] **Provider hardening.** Vault rejects non-string KV values; Vault timeout clamped to 1–60s;
+      `.xcconfig` warns on interpolation/conditionals it cannot evaluate. (M2, M3 · Decision 6)
+- [x] **Security regression suite.** Nonce uniqueness, key-name domain separation, key-required vs.
+      keyless reads, legacy `OBF2` read-back, key-material round-trip (25 tests total). (L2)
+- [ ] **Sign the manifest (Ed25519)** — **deferred.** Integrity (not secrecy); deliberately held back
+      to avoid CI signing-key management before it is needed. Pull forward when wanted. (M4 · Decision 2)
+
+Exit criteria (met, except signing): opening `Secrets.sealed` no longer yields the key; the runner
+will not seal with an unpinned compiler in strict mode; the README's "not easy to extract" claim is
+literally true again. Tamper-detection via signing remains open (M4).
 
 ## Phase 2 — The by-design fix (project-sized; decision gate first)
 

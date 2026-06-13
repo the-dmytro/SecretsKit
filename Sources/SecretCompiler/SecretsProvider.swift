@@ -14,6 +14,7 @@ enum SecretCompilerError: Error {
     case vaultRequestFailed(String)
     case vaultInvalidResponse(String)
     case vaultInsecureTransport(String)
+    case invalidKeyMaterial(String)
     case autoProviderFailed([AutoProviderAttempt])
 }
 
@@ -44,6 +45,8 @@ extension SecretCompilerError: CustomStringConvertible {
             return "Invalid Vault response: \(message)"
         case .vaultInsecureTransport(let address):
             return "Insecure Vault transport: \(address)"
+        case .invalidKeyMaterial(let detail):
+            return "Invalid obfuscation key material: \(detail)"
         case .autoProviderFailed:
             return "Auto provider failed"
         }
@@ -101,12 +104,23 @@ struct FileSecretsProvider: SecretsProvider {
             }
             let parts = trimmed.split(separator: "=", maxSplits: 1)
             guard parts.count == 2 else { continue }
-            let key = parts[0].trimmingCharacters(in: .whitespaces)
+            let rawKey = parts[0].trimmingCharacters(in: .whitespaces)
+            // Strip any `[sdk=...]`-style conditional suffix and warn — we do not evaluate conditionals.
+            let key: String
+            if let bracket = rawKey.firstIndex(of: "[") {
+                key = String(rawKey[..<bracket]).trimmingCharacters(in: .whitespaces)
+                FileHandle.standardError.write(Data("warning: xcconfig conditional on '\(rawKey)' is not evaluated; using the value verbatim.\n".utf8))
+            } else {
+                key = rawKey
+            }
             var value = parts[1].trimmingCharacters(in: .whitespaces)
             if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
                 value = String(value.dropFirst().dropLast())
             }
             if keys.contains(key) {
+                if value.contains("$(") {
+                    FileHandle.standardError.write(Data("warning: xcconfig value for '\(key)' contains variable interpolation ($(...)) which is not expanded; sealing the literal text.\n".utf8))
+                }
                 secrets[key] = value
             }
         }
@@ -276,8 +290,8 @@ struct VaultSecretsProvider: SecretsProvider {
         for key in keys {
             if let value = payload[key] as? String {
                 secrets[key] = value
-            } else if let value = payload[key] {
-                secrets[key] = String(describing: value)
+            } else if payload[key] != nil {
+                throw SecretCompilerError.vaultInvalidResponse("Value for key '\(key)' is not a string")
             }
         }
 

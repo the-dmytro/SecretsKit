@@ -146,7 +146,8 @@ resolve_cli_ref() {
     echo "${SECRETSKIT_CLI_REF}"
     return 0
   fi
-  if [ "${SECRETSKIT_CLI_POLICY:-}" = "locked" ] || [ "${CLI_POLICY:-}" = "locked" ]; then
+  local policy="${SECRETSKIT_CLI_POLICY:-${CLI_POLICY:-}}"
+  if [ "${policy}" = "locked" ] || [ "${policy}" = "strict" ]; then
     local ref
     ref="$(resolve_ref_from_package_resolved || true)"
     if [ -n "${ref}" ]; then
@@ -201,6 +202,13 @@ bootstrap_cli() {
     git fetch --tags origin
     git fetch origin "${ref}" || true
     git checkout "${ref}"
+    if [[ "${ref}" =~ ^[0-9a-f]{40}$ ]]; then
+      head_rev="$(git rev-parse HEAD)"
+      if [ "${head_rev}" != "${ref}" ]; then
+        echo "error: checked-out revision ${head_rev} does not match resolved ref ${ref}" >&2
+        exit 1
+      fi
+    fi
   )
 
   local build_bin_dir
@@ -211,15 +219,45 @@ bootstrap_cli() {
   echo "${bin_path}"
 }
 
+policy_value() {
+  local p="${SECRETSKIT_CLI_POLICY:-${CLI_POLICY:-}}"
+  if [ -z "${p}" ]; then
+    p="$(config_value cli.policy)"
+  fi
+  echo "${p:-strict}"
+}
+
+digest_ok() {
+  # Returns 0 only if SECRETSKIT_CLI_SHA256 is set and matches the given binary's digest.
+  local bin="$1"
+  if [ -z "${SECRETSKIT_CLI_SHA256:-}" ]; then
+    return 1
+  fi
+  local actual
+  actual="$(shasum -a 256 "${bin}" 2>/dev/null | awk '{print $1}')"
+  [ -n "${actual}" ] && [ "${actual}" = "${SECRETSKIT_CLI_SHA256}" ]
+}
+
 resolve_cli() {
+  local policy
+  policy="$(policy_value)"
+
   if [ -n "${SECRETSKIT_CLI_PATH:-}" ] && [ -x "${SECRETSKIT_CLI_PATH}" ]; then
+    if [ "${policy}" = "strict" ] && ! digest_ok "${SECRETSKIT_CLI_PATH}"; then
+      die "strict policy: refusing SECRETSKIT_CLI_PATH unless SECRETSKIT_CLI_SHA256 matches its digest. Use a cached source build, set the digest, or opt down to cli.policy=compatible."
+    fi
     echo "${SECRETSKIT_CLI_PATH}"
     return 0
   fi
 
   if command -v secretcompiler >/dev/null 2>&1; then
-    command -v secretcompiler
-    return 0
+    local pathbin
+    pathbin="$(command -v secretcompiler)"
+    if [ "${policy}" != "strict" ] || digest_ok "${pathbin}"; then
+      echo "${pathbin}"
+      return 0
+    fi
+    # strict + no digest match: ignore the ambient PATH binary and fall through to a pinned build.
   fi
 
   local ref
@@ -258,12 +296,12 @@ check_cli_policy() {
   if [ -z "${policy}" ]; then
     policy="$(config_value cli.policy)"
   fi
-  policy="${policy:-compatible}"
+  policy="${policy:-strict}"
 
   local cli_version
   cli_version="$(read_cli_version "${cli}")"
 
-  if [ "${policy}" = "locked" ] && [ -n "${ref}" ]; then
+  if { [ "${policy}" = "locked" ] || [ "${policy}" = "strict" ]; } && [ -n "${ref}" ]; then
     if [[ "${ref}" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]] && [ -n "${cli_version}" ]; then
       if [ "${cli_version}" != "${ref}" ]; then
         die "secretcompiler version ${cli_version} does not match locked ref ${ref}."
@@ -289,7 +327,7 @@ CLI_POLICY="${SECRETSKIT_CLI_POLICY:-}"
 if [ -z "${CLI_POLICY}" ]; then
   CLI_POLICY="$(config_value cli.policy)"
 fi
-CLI_POLICY="${CLI_POLICY:-compatible}"
+CLI_POLICY="${CLI_POLICY:-strict}"
 
 if [ "${COMMAND}" = "install" ]; then
   ensure_cli_available >/dev/null

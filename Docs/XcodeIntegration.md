@@ -35,10 +35,23 @@ ${SRCROOT}/Scripts/SecretsKit/seal_secrets.sh
 The runner sets `SECRETS_CONFIG_PATH` and `SECRETS_OUTPUT_PATH`, then invokes `secretcompiler`.
 If you need additional `SECRETS_*` overrides, prefer editing the wrapper scripts to avoid Xcode escaping issues.
 
-## 5) Runtime usage
+## 5) Generate the obfuscation key (once)
+The `OBF3` format keeps the obfuscation key in the app binary, not the bundle. Generate it once and
+commit the Swift file into your app target:
+```
+secretcompiler generate-key \
+  --swift-output Sources/Generated/AppObfKey.swift \
+  --material-output Config/AppObfKey.material
+```
+- Add `AppObfKey.swift` to your app target (it contains the key, not your secrets).
+- Keep `AppObfKey.material` available to the seal step, e.g. export `SECRETS_OBF_KEY_MATERIAL` in the
+  seal wrapper, or pass `--key-material Config/AppObfKey.material`. Without it, `seal` falls back to the
+  deprecated `OBF2` format.
+
+## 6) Runtime usage
 ```swift
 import SecretsRuntime
 
-let secrets = try SecretsManager()
+let secrets = try SecretsManager(obfuscationKey: AppObfKey.obfuscationKey)
 let apiKey = try secrets.requiredValue(for: "EXAMPLE_API_KEY")
 ```

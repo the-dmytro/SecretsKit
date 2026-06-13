@@ -142,10 +142,11 @@ that happens to be shadowed by a later one fails silently. Minor, but worth a di
 
 ## Summary table
 
-> **Status (0.2.0):** H1, H2, M1, M5, and the HTTPS half of H3 are fixed in Phase 0, along with the
-> test gap (L2) and the API/docs honesty pass (L1). The findings below are kept as the original
-> analysis; see [`CHANGELOG.md`](../../CHANGELOG.md) and [04-roadmap.md](04-roadmap.md) for what has
-> shipped. C1, C2, H4, M2, M3, M4 remain for Phase 1; classification work (L3) for Phase 2.
+> **Status (0.3.0):** Phase 0 fixed H1, H2, M1, M5, H3, L1, L2. Phase 1 fixed **C1, C2** (the critical
+> pair — `OBF3` separates key from ciphertext and uses per-entry nonces), **H4** (strict runner),
+> **M2, M3** (provider hardening). **M4** (manifest signing) is intentionally **deferred**. Remaining:
+> M4, and the Phase 2 classification work (L3). The findings below are kept as the original analysis;
+> see [`CHANGELOG.md`](../../CHANGELOG.md) and [04-roadmap.md](04-roadmap.md) for what shipped.
 
 | ID | Severity | One-line | Phase |
 |----|----------|----------|-------|

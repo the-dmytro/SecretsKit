@@ -68,7 +68,8 @@ private func resolveVaultSettings(env: [String: String], config: SecretsKitConfi
     let mount = env[mountEnv] ?? vaultConfig?.mount ?? "secret"
     let path = env[pathEnv] ?? vaultConfig?.path
     let kvVersion = Int(env["SECRETS_VAULT_KV_VERSION"] ?? "") ?? vaultConfig?.kvVersion ?? 2
-    let timeoutSeconds = Double(env["SECRETS_VAULT_TIMEOUT"] ?? "") ?? vaultConfig?.timeoutSeconds ?? 10
+    let rawTimeout = Double(env["SECRETS_VAULT_TIMEOUT"] ?? "") ?? vaultConfig?.timeoutSeconds ?? 10
+    let timeoutSeconds = min(max(rawTimeout, 1), 60)
 
     guard let address, !address.isEmpty else {
         throw SecretCompilerError.missingVaultConfig(addrEnv)
@@ -231,35 +232,51 @@ private func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 
         return 1
     }
 
-    let material = try SecretObfuscationMaterial.generate()
-    var sealedMap: [String: String] = [:]
-    for key in keys {
-        guard let value = secrets[key], !value.isEmpty else {
-            printError("Missing secret: \(key)")
-            hasErrors = true
-            continue
-        }
-        let shouldObfuscate = schema?.shouldObfuscate(key) ?? true
-        if shouldObfuscate {
-            let obfuscated = try SecretObfuscator.obfuscate(value, material: material)
-            sealedMap[key] = obfuscated
-        } else {
-            sealedMap[key] = value
-        }
+    // Every key must have a non-empty value before we seal.
+    for key in keys where (secrets[key]?.isEmpty ?? true) {
+        printError("Missing secret: \(key)")
+        hasErrors = true
     }
-
     if hasErrors {
         return 1
     }
 
-    let sealed = SealedSecrets(version: 1, format: "OBF2", obfuscation: material, secrets: sealedMap)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    let data = try encoder.encode(sealed)
+
+    let data: Data
+    let keyMaterialPath = args.option("key-material") ?? env["SECRETS_OBF_KEY_MATERIAL"]
+    if let keyMaterialPath {
+        // OBF3: keyless ciphertext; obfuscation key lives in the app binary.
+        let obfuscationKey = try ObfuscationKeyMaterial.load(from: keyMaterialPath).obfuscationKey()
+        var entries: [String: SealedEntry] = [:]
+        for key in keys {
+            let value = secrets[key] ?? ""
+            if schema?.shouldObfuscate(key) ?? true {
+                entries[key] = try SecretObfuscatorV3.seal(value, keyName: key, using: obfuscationKey)
+            } else {
+                entries[key] = SealedEntry.plain(value)
+            }
+        }
+        data = try encoder.encode(SealedSecretsV2(version: 2, format: "OBF3", entries: entries))
+    } else {
+        // Legacy OBF2: obfuscation material embedded in the file. Kept for migration; deprecated.
+        FileHandle.standardError.write(Data("warning: sealing in legacy OBF2 format (obfuscation key embedded in the bundle). Run `secretcompiler generate-key` and pass --key-material to produce keyless OBF3.\n".utf8))
+        let material = try SecretObfuscationMaterial.generate()
+        var sealedMap: [String: String] = [:]
+        for key in keys {
+            let value = secrets[key] ?? ""
+            if schema?.shouldObfuscate(key) ?? true {
+                sealedMap[key] = try SecretObfuscator.obfuscate(value, material: material)
+            } else {
+                sealedMap[key] = value
+            }
+        }
+        data = try encoder.encode(SealedSecrets(version: 1, format: "OBF2", obfuscation: material, secrets: sealedMap))
+    }
 
     let outputURL = URL(fileURLWithPath: outputPath)
-    let outputDir = outputURL.deletingLastPathComponent()
-    try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true, attributes: nil)
+    try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
     try data.write(to: outputURL, options: [.atomic])
     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: outputURL.path)
 
@@ -267,12 +284,46 @@ private func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 
     return 0
 }
 
+private func runGenerateKey(args: CLIArguments, env: [String: String]) throws -> Int32 {
+    let symbol = args.option("symbol") ?? env["SECRETS_OBF_KEY_SYMBOL"] ?? "GeneratedSecretsObfuscationKey"
+
+    guard let swiftOutput = args.option("swift-output") ?? env["SECRETS_OBF_KEY_SWIFT_OUTPUT"] else {
+        throw SecretCompilerError.missingOutput
+    }
+    let materialOutput = args.option("material-output")
+        ?? env["SECRETS_OBF_KEY_MATERIAL"]
+        ?? ((swiftOutput as NSString).deletingPathExtension + ".material")
+
+    let material = try ObfuscationKeyMaterial.generate()
+
+    let swiftURL = URL(fileURLWithPath: swiftOutput)
+    try FileManager.default.createDirectory(at: swiftURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+    try Data(material.swiftSource(symbol: symbol).utf8).write(to: swiftURL, options: [.atomic])
+    print("Obfuscation key (Swift) written to \(swiftURL.path) — compile this into your app target.")
+
+    let materialURL = URL(fileURLWithPath: materialOutput)
+    try FileManager.default.createDirectory(at: materialURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    try encoder.encode(material).write(to: materialURL, options: [.atomic])
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: materialURL.path)
+    print("Obfuscation key material written to \(materialURL.path) — pass to `seal` via --key-material.")
+
+    return 0
+}
+
 private func printUsage() {
     let message = """
     Usage:
       secretcompiler validate --config <path> --schema <path> --provider <file|env|vault|auto> --source <path>
-      secretcompiler seal --config <path> --schema <path> --provider <file|env|vault|auto> --source <path> --output <path>
+      secretcompiler seal --config <path> --schema <path> --provider <file|env|vault|auto> --source <path> --output <path> [--key-material <path>]
+      secretcompiler generate-key --swift-output <path> [--material-output <path>] [--symbol <name>]
       secretcompiler version [--json]
+
+    Notes:
+      seal writes keyless OBF3 when --key-material is given; otherwise it writes legacy OBF2 (deprecated).
+      generate-key produces the obfuscation key once: a Swift file to compile into your app, plus a
+      .material sidecar to pass to seal.
 
     Environment:
       SECRETS_CONFIG_PATH
@@ -292,6 +343,9 @@ private func printUsage() {
       SECRETS_VAULT_KV_VERSION
       SECRETS_VAULT_TIMEOUT
       SECRETS_VAULT_ALLOW_INSECURE_HTTP
+      SECRETS_OBF_KEY_MATERIAL
+      SECRETS_OBF_KEY_SWIFT_OUTPUT
+      SECRETS_OBF_KEY_SYMBOL
     """
     print(message)
 }
@@ -310,6 +364,8 @@ func main() -> Int32 {
             return try runValidate(args: args, env: env)
         case "seal", "obfuscate":
             return try runSeal(args: args, env: env)
+        case "generate-key":
+            return try runGenerateKey(args: args, env: env)
         case "version", "--version":
             if args.option("json") == "true" {
                 let payload = ["version": SecretsKitVersion.current]
@@ -348,6 +404,9 @@ func main() -> Int32 {
         return 1
     } catch SecretCompilerError.vaultInvalidResponse(let message) {
         printError("Invalid Vault response: \(message)")
+        return 1
+    } catch SecretCompilerError.invalidKeyMaterial(let detail) {
+        printError("Invalid obfuscation key material: \(detail)")
         return 1
     } catch SecretCompilerError.autoProviderFailed(let attempts) {
         printError("Auto provider failed to satisfy required keys")

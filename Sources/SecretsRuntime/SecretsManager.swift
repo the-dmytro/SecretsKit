@@ -1,68 +1,110 @@
 import Foundation
 
 public final class SecretsManager {
-    private let sealed: SealedSecrets
+    private enum Storage {
+        /// `OBF3`: keyless ciphertext; the obfuscation key is supplied externally.
+        case v3(SealedSecretsV2)
+        /// Legacy `OBF2`: the obfuscation material is embedded in the file. Read-only, for migration.
+        case legacy(SealedSecrets)
+    }
 
-    public convenience init(bundle: Bundle = .main, resourceName: String = "Secrets", fileExtension: String = "sealed") throws {
+    private let storage: Storage
+    private let obfuscationKey: SecretsObfuscationKey?
+
+    public convenience init(
+        bundle: Bundle = .main,
+        resourceName: String = "Secrets",
+        fileExtension: String = "sealed",
+        obfuscationKey: SecretsObfuscationKey? = nil
+    ) throws {
         guard let url = bundle.url(forResource: resourceName, withExtension: fileExtension) else {
             throw SecretsError.sealedResourceNotFound
         }
-        try self.init(url: url)
+        try self.init(url: url, obfuscationKey: obfuscationKey)
     }
 
-    public init(url: URL) throws {
+    /// - Parameter obfuscationKey: required to read obfuscated `OBF3` entries (generate it with
+    ///   `secretcompiler generate-key` and compile it into the app). Not needed for legacy `OBF2`
+    ///   files or for non-obfuscated entries.
+    public init(url: URL, obfuscationKey: SecretsObfuscationKey? = nil) throws {
         let data: Data
         do {
             data = try Data(contentsOf: url)
         } catch {
             throw SecretsError.sealedResourceUnreadable
         }
-        guard let sealed = try? JSONDecoder().decode(SealedSecrets.self, from: data) else {
+
+        self.obfuscationKey = obfuscationKey
+
+        let decoder = JSONDecoder()
+        if let v2 = try? decoder.decode(SealedSecretsV2.self, from: data), v2.format == "OBF3" {
+            self.storage = .v3(v2)
+        } else if let legacy = try? decoder.decode(SealedSecrets.self, from: data) {
+            self.storage = .legacy(legacy)
+        } else {
             throw SecretsError.sealedResourceInvalid
         }
-        self.sealed = sealed
     }
 
     /// Returns the secret for `key`.
     ///
-    /// - Throws: `SecretsError.secretMissing` if the key is absent, or
-    ///   `SecretsError.secretInvalid` if the stored value is empty or cannot be deobfuscated.
+    /// - Parameter obfuscated: only consulted for legacy `OBF2` files; in `OBF3` the entry records
+    ///   whether it was obfuscated.
+    /// - Throws: `SecretsError.secretMissing` if absent, `.secretInvalid` if empty or undecodable,
+    ///   or `.obfuscationKeyRequired` if an `OBF3` entry is obfuscated but no key was provided.
     public func requiredValue(for key: String, obfuscated: Bool = true) throws -> String {
-        guard let rawValue = sealed.secrets[key] else {
-            throw SecretsError.secretMissing(key)
-        }
-
-        if obfuscated && rawValue.hasPrefix("OBF2::") {
-            let resolved = SecretObfuscator.deobfuscate(rawValue, material: sealed.obfuscation)
-            guard !resolved.isEmpty else {
+        switch storage {
+        case .v3(let sealed):
+            guard let entry = sealed.entries[key] else {
+                throw SecretsError.secretMissing(key)
+            }
+            if entry.obfuscated {
+                guard let obfuscationKey else {
+                    throw SecretsError.obfuscationKeyRequired
+                }
+                let resolved = try SecretObfuscatorV3.open(entry, keyName: key, using: obfuscationKey)
+                guard !resolved.isEmpty else {
+                    throw SecretsError.secretInvalid(key)
+                }
+                return resolved
+            }
+            guard let value = entry.value, !value.isEmpty else {
                 throw SecretsError.secretInvalid(key)
             }
-            return resolved
-        }
+            return value
 
-        guard !rawValue.isEmpty else {
-            throw SecretsError.secretInvalid(key)
+        case .legacy(let sealed):
+            guard let rawValue = sealed.secrets[key] else {
+                throw SecretsError.secretMissing(key)
+            }
+            if obfuscated && rawValue.hasPrefix("OBF2::") {
+                let resolved = SecretObfuscator.deobfuscate(rawValue, material: sealed.obfuscation)
+                guard !resolved.isEmpty else {
+                    throw SecretsError.secretInvalid(key)
+                }
+                return resolved
+            }
+            guard !rawValue.isEmpty else {
+                throw SecretsError.secretInvalid(key)
+            }
+            return rawValue
         }
-        return rawValue
     }
 
-    /// Returns the secret for `key`, or `nil` if it is missing, empty, or cannot be deobfuscated.
+    /// Returns the secret for `key`, or `nil` if it is missing, empty, undecodable, or needs a key
+    /// that was not provided.
     public func optionalValue(for key: String, obfuscated: Bool = true) -> String? {
         return try? requiredValue(for: key, obfuscated: obfuscated)
     }
 
     /// Returns the secret for `key` wrapped in a `ProtectedSecret` whose bytes are zeroed when released.
-    ///
-    /// - Throws: the same errors as `requiredValue(for:obfuscated:)`.
     public func requiredProtectedValue(for key: String, obfuscated: Bool = true) throws -> ProtectedSecret {
         return ProtectedSecret(try requiredValue(for: key, obfuscated: obfuscated))
     }
 
-    /// Validates that each required key resolves to a non-empty secret.
+    /// Validates that each required key resolves to a non-empty secret, in every build config.
     ///
-    /// Placeholder / format checks are the build-time CLI's responsibility (`secretcompiler validate`);
-    /// this runtime check only confirms the values are present and decodable, in every build config.
-    ///
+    /// Placeholder / format checks are the build-time CLI's responsibility (`secretcompiler validate`).
     /// - Throws: the first `SecretsError` encountered.
     public func validateRequiredKeys(_ keys: [String]) throws {
         for key in keys {

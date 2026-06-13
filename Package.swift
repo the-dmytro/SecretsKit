@@ -27,7 +27,7 @@ let package = Package(
         ),
         .testTarget(
             name: "SecretCompilerTests",
-            dependencies: ["SecretCompiler"]
+            dependencies: ["SecretCompiler", "SecretsRuntime"]
         )
     ]
 )

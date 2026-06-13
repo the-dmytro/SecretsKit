@@ -74,7 +74,7 @@ public struct SecretObfuscationMaterial: Codable {
 }
 
 extension Data {
-    init?(hexString: String) {
+    public init?(hexString: String) {
         let clean = hexString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard clean.count % 2 == 0 else { return nil }
         var data = Data(capacity: clean.count / 2)
