@@ -236,14 +236,17 @@ func writeSealedData(_ data: Data, to outputPath: String) throws {
 private func writeDataWithOwnerOnlyPermissions(_ data: Data, to outputPath: String) throws {
     let outputURL = URL(fileURLWithPath: outputPath)
     try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+    var isDirectory: ObjCBool = false
+    if FileManager.default.fileExists(atPath: outputURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
+        throw SecretCompilerError.fileWriteFailed(outputPath)
+    }
     let tempURL = outputURL.deletingLastPathComponent()
         .appendingPathComponent(".\(outputURL.lastPathComponent).tmp-\(UUID().uuidString)")
     guard FileManager.default.createFile(atPath: tempURL.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
         throw SecretCompilerError.fileWriteFailed(outputPath)
     }
     do {
-        _ = try? FileManager.default.removeItem(at: outputURL)
-        try FileManager.default.moveItem(at: tempURL, to: outputURL)
+        _ = try FileManager.default.replaceItemAt(outputURL, withItemAt: tempURL, backupItemName: nil, options: [.usingNewMetadataOnly])
     } catch {
         _ = try? FileManager.default.removeItem(at: tempURL)
         throw SecretCompilerError.fileWriteFailed(outputPath)

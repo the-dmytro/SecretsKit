@@ -63,6 +63,24 @@ final class SealFormatTests: XCTestCase {
         XCTAssertEqual(attributes[.posixPermissions] as? Int, 0o600)
     }
 
+    func testWriteSealedDataRefusesDirectoryDestinationWithoutDeletingIt() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let output = directory.appendingPathComponent("Secrets.sealed", isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let sentinel = output.appendingPathComponent("keep.txt")
+        try Data("keep".utf8).write(to: sentinel)
+
+        XCTAssertThrowsError(try writeSealedData(Data("{}".utf8), to: output.path)) { error in
+            guard case SecretCompilerError.fileWriteFailed = error else {
+                return XCTFail("expected fileWriteFailed, got \(error)")
+            }
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sentinel.path))
+    }
+
     func testWriteSealedDataCreatesFileWithOwnerOnlyPermissions() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }

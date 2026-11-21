@@ -18,8 +18,9 @@ Patch hardening for the 0.4.x classification rollout.
   could otherwise leak into request-error logs; authenticate via `VAULT_TOKEN` only.
 - An invalid `--placeholder-regex` / `SECRETS_PLACEHOLDER_REGEX` now fails the build instead of
   silently falling back to the default pattern.
-- Sealed output and `generate-key` material are written via a `0600` temp file + rename, so they are
-  never briefly world-readable regardless of the caller's umask.
+- Sealed output and `generate-key` material are written via a `0600` temp file + atomic
+  `replaceItemAt`, so they are never briefly world-readable regardless of the caller's umask, and a
+  directory destination is refused instead of being deleted.
 
 ### Added
 - Regression tests for serverOnly-only sealing and runner forwarding of `--require-classification`,
