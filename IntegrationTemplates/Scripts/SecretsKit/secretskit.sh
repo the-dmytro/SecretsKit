@@ -141,13 +141,17 @@ PY
   echo "${output##* }"
 }
 
+policy_is_strict() {
+  [ "${1:-}" = "strict" ] || [ "${1:-}" = "locked" ]
+}
+
 resolve_cli_ref() {
   if [ -n "${SECRETSKIT_CLI_REF:-}" ]; then
     echo "${SECRETSKIT_CLI_REF}"
     return 0
   fi
   local policy="${SECRETSKIT_CLI_POLICY:-${CLI_POLICY:-}}"
-  if [ "${policy}" = "locked" ] || [ "${policy}" = "strict" ]; then
+  if policy_is_strict "${policy}"; then
     local ref
     ref="$(resolve_ref_from_package_resolved || true)"
     if [ -n "${ref}" ]; then
@@ -156,7 +160,17 @@ resolve_cli_ref() {
     fi
     return 1
   fi
-  echo "${SECRETSKIT_CLI_REF_FALLBACK:-main}"
+  # Never fall back to a mutable branch for secret-processing commands; `main` stays
+  # the fallback only for `install`, which fetches without running over secrets.
+  if [ "${COMMAND}" = "install" ]; then
+    echo "${SECRETSKIT_CLI_REF_FALLBACK:-main}"
+    return 0
+  fi
+  if [ -n "${SECRETSKIT_CLI_REF_FALLBACK:-}" ]; then
+    echo "${SECRETSKIT_CLI_REF_FALLBACK}"
+    return 0
+  fi
+  return 1
 }
 
 resolve_cached_cli() {
@@ -216,6 +230,11 @@ bootstrap_cli() {
   cp "${build_bin_dir}/secretcompiler" "${bin_path}"
   chmod 755 "${bin_path}"
 
+  if [ -n "${SECRETSKIT_CLI_SHA256:-}" ] && ! digest_ok "${bin_path}"; then
+    rm -f "${bin_path}"
+    die "Bootstrapped secretcompiler (ref ${ref}) does not match SECRETSKIT_CLI_SHA256; refusing to use it."
+  fi
+
   echo "${bin_path}"
 }
 
@@ -243,7 +262,7 @@ resolve_cli() {
   policy="$(policy_value)"
 
   if [ -n "${SECRETSKIT_CLI_PATH:-}" ] && [ -x "${SECRETSKIT_CLI_PATH}" ]; then
-    if [ "${policy}" = "strict" ] && ! digest_ok "${SECRETSKIT_CLI_PATH}"; then
+    if policy_is_strict "${policy}" && ! digest_ok "${SECRETSKIT_CLI_PATH}"; then
       die "strict policy: refusing SECRETSKIT_CLI_PATH unless SECRETSKIT_CLI_SHA256 matches its digest. Unset SECRETSKIT_CLI_PATH, set the digest, or opt down to cli.policy=compatible."
     fi
     echo "${SECRETSKIT_CLI_PATH}"
@@ -253,19 +272,25 @@ resolve_cli() {
   if command -v secretcompiler >/dev/null 2>&1; then
     local pathbin
     pathbin="$(command -v secretcompiler)"
-    if [ "${policy}" = "strict" ] && ! digest_ok "${pathbin}"; then
+    if policy_is_strict "${policy}" && ! digest_ok "${pathbin}"; then
       die "strict policy: refusing PATH secretcompiler unless SECRETSKIT_CLI_SHA256 matches its digest. Remove it from PATH, set the digest, or opt down to cli.policy=compatible."
     fi
-    if [ "${policy}" != "strict" ] || digest_ok "${pathbin}"; then
-      echo "${pathbin}"
-      return 0
-    fi
+    echo "${pathbin}"
+    return 0
   fi
 
   local ref
   ref="$(resolve_cli_ref || true)"
   if [ -n "${ref}" ]; then
-    resolve_cached_cli "${ref}" || true
+    local cached
+    cached="$(resolve_cached_cli "${ref}" || true)"
+    if [ -n "${cached}" ]; then
+      if policy_is_strict "${policy}" && ! digest_ok "${cached}"; then
+        die "strict policy: refusing cached secretcompiler at ${cached} unless SECRETSKIT_CLI_SHA256 matches its digest. Rebuild with 'secretskit.sh install', set the digest, or opt down to cli.policy=compatible."
+      fi
+      echo "${cached}"
+      return 0
+    fi
   fi
 }
 
@@ -278,6 +303,11 @@ ensure_cli_available() {
   fi
 
   if [ "${SECRETSKIT_AUTO_BOOTSTRAP:-}" = "1" ] || [ "${COMMAND}" = "install" ]; then
+    local policy
+    policy="$(policy_value)"
+    if [ "${COMMAND}" != "install" ] && policy_is_strict "${policy}" && [ -z "${SECRETSKIT_CLI_SHA256:-}" ]; then
+      die "strict policy: auto-bootstrap for '${COMMAND}' requires SECRETSKIT_CLI_SHA256 to pin the built binary. Set the digest, or opt down to cli.policy=compatible."
+    fi
     bootstrap_cli
     return 0
   fi

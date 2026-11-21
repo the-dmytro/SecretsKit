@@ -37,6 +37,45 @@ final class SealFormatTests: XCTestCase {
         XCTAssertEqual(sealed.format, "OBF2")
     }
 
+    func testSealWithKeyMaterialWritesOBF3WithOwnerOnlyPermissions() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+
+        let materialURL = fixture.directory.appendingPathComponent("AppObfKey.material")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(try ObfuscationKeyMaterial.generate()).write(to: materialURL)
+
+        let args = sealArgs(
+            schema: fixture.schema,
+            source: fixture.source,
+            output: fixture.output,
+            extraOptions: ["key-material": materialURL.path]
+        )
+
+        XCTAssertEqual(try runSeal(args: args, env: [:]), 0)
+
+        let sealed = try JSONDecoder().decode(SealedSecretsV2.self, from: try Data(contentsOf: fixture.output))
+        XCTAssertEqual(sealed.format, "OBF3")
+        XCTAssertEqual(sealed.entries["API_KEY"]?.obfuscated, true)
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: fixture.output.path)
+        XCTAssertEqual(attributes[.posixPermissions] as? Int, 0o600)
+    }
+
+    func testWriteSealedDataCreatesFileWithOwnerOnlyPermissions() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let output = directory.appendingPathComponent("Secrets.sealed")
+
+        try writeSealedData(Data("{}".utf8), to: output.path)
+
+        XCTAssertEqual(try Data(contentsOf: output), Data("{}".utf8))
+        let attributes = try FileManager.default.attributesOfItem(atPath: output.path)
+        XCTAssertEqual(attributes[.posixPermissions] as? Int, 0o600)
+    }
+
     private func makeFixture() throws -> (directory: URL, schema: URL, source: URL, output: URL) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
