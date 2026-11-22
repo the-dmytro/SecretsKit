@@ -18,9 +18,13 @@ Patch hardening for the 0.4.x classification rollout.
   could otherwise leak into request-error logs; authenticate via `VAULT_TOKEN` only.
 - An invalid `--placeholder-regex` / `SECRETS_PLACEHOLDER_REGEX` now fails the build instead of
   silently falling back to the default pattern.
-- Sealed output and `generate-key` material are written via a `0600` temp file + atomic
-  `replaceItemAt`, so they are never briefly world-readable regardless of the caller's umask, and a
-  directory destination is refused instead of being deleted.
+- Sealed output and `generate-key` material are written via a `0600` temp file that is moved into
+  place when the destination is absent and atomically `replaceItemAt`-replaced when it exists, so
+  they are never briefly world-readable regardless of the caller's umask, a directory destination is
+  refused instead of being deleted, and first-time writes succeed.
+- Runner: the bootstrap cache fast path now verifies `SECRETSKIT_CLI_SHA256` too, so a cached binary
+  with a mismatching digest cannot be executed via `SECRETSKIT_AUTO_BOOTSTRAP=1` after the
+  resolve-time refusal.
 
 ### Added
 - Regression tests for serverOnly-only sealing and runner forwarding of `--require-classification`,

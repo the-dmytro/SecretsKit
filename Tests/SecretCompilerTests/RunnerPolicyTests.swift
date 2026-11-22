@@ -175,6 +175,40 @@ final class RunnerPolicyTests: XCTestCase {
         XCTAssertTrue(result.stderr.contains("fake compiler validate --config"), result.stderr)
     }
 
+    func testStrictAutoBootstrapRefusesCachedBinaryWithMismatchingDigest() throws {
+        let fixture = try makeProjectFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+
+        let cacheDir = fixture.directory.appendingPathComponent("cache", isDirectory: true)
+        let cachedBin = cacheDir.appendingPathComponent("0.4.1/secretcompiler")
+        try FileManager.default.createDirectory(at: cachedBin.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try writeFakeCompiler(
+            to: cachedBin,
+            body: """
+            #!/bin/sh
+            echo "fake compiler executed" >&2
+            exit 0
+            """
+        )
+
+        let result = try runRunner(
+            command: "seal",
+            projectRoot: fixture.directory,
+            extraEnvironment: [
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "SECRETSKIT_AUTO_BOOTSTRAP": "1",
+                "SECRETSKIT_CLI_REF": "0.4.1",
+                "SECRETSKIT_CACHE_DIR": cacheDir.path,
+                "SECRETSKIT_CLI_SHA256": "0000000000000000000000000000000000000000000000000000000000000000",
+                "SECRETS_OUTPUT_PATH": fixture.directory.appendingPathComponent("Secrets.sealed").path
+            ]
+        )
+
+        XCTAssertNotEqual(result.status, 0)
+        XCTAssertTrue(result.stderr.contains("does not match SECRETSKIT_CLI_SHA256"), result.stderr)
+        XCTAssertFalse(result.stderr.contains("fake compiler executed"), result.stderr)
+    }
+
     func testCompatiblePolicyDoesNotUseMainFallbackForSeal() throws {
         let fixture = try makeProjectFixture(policy: "compatible")
         defer { try? FileManager.default.removeItem(at: fixture.directory) }

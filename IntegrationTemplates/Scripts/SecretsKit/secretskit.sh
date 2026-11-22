@@ -202,6 +202,9 @@ bootstrap_cli() {
   local repo_url="${SECRETSKIT_REPO_URL:-https://github.com/the-dmytro/SecretsKit.git}"
 
   if [ -x "${bin_path}" ]; then
+    if [ -n "${SECRETSKIT_CLI_SHA256:-}" ] && ! digest_ok "${bin_path}"; then
+      die "Cached secretcompiler at ${bin_path} does not match SECRETSKIT_CLI_SHA256; refusing to use it. Remove the cache entry or fix the digest."
+    fi
     echo "${bin_path}"
     return 0
   fi

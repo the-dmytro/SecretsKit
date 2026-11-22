@@ -235,23 +235,29 @@ func writeSealedData(_ data: Data, to outputPath: String) throws {
 
 private func writeDataWithOwnerOnlyPermissions(_ data: Data, to outputPath: String) throws {
     let outputURL = URL(fileURLWithPath: outputPath)
-    try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+    let fileManager = FileManager.default
+    try fileManager.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
     var isDirectory: ObjCBool = false
-    if FileManager.default.fileExists(atPath: outputURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
+    let destinationExists = fileManager.fileExists(atPath: outputURL.path, isDirectory: &isDirectory)
+    if destinationExists && isDirectory.boolValue {
         throw SecretCompilerError.fileWriteFailed(outputPath)
     }
     let tempURL = outputURL.deletingLastPathComponent()
         .appendingPathComponent(".\(outputURL.lastPathComponent).tmp-\(UUID().uuidString)")
-    guard FileManager.default.createFile(atPath: tempURL.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
+    guard fileManager.createFile(atPath: tempURL.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
         throw SecretCompilerError.fileWriteFailed(outputPath)
     }
     do {
-        _ = try FileManager.default.replaceItemAt(outputURL, withItemAt: tempURL, backupItemName: nil, options: [.usingNewMetadataOnly])
+        if destinationExists {
+            _ = try fileManager.replaceItemAt(outputURL, withItemAt: tempURL, backupItemName: nil, options: [.usingNewMetadataOnly])
+        } else {
+            try fileManager.moveItem(at: tempURL, to: outputURL)
+        }
     } catch {
-        _ = try? FileManager.default.removeItem(at: tempURL)
+        _ = try? fileManager.removeItem(at: tempURL)
         throw SecretCompilerError.fileWriteFailed(outputPath)
     }
-    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: outputURL.path)
+    try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: outputURL.path)
 }
 
 private func runValidate(args: CLIArguments, env: [String: String]) throws -> Int32 {
