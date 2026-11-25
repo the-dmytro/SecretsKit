@@ -7,10 +7,33 @@ Patch hardening for the 0.4.x classification rollout.
 ### Fixed
 - Schemas with only `serverOnly` keys now seal an empty `OBF3` resource without requiring any local
   provider/source path, because no client-bundled value is loaded.
+- Runner (`secretskit.sh`): `strict`/`locked` policy now digest-checks **cached and bootstrapped**
+  `secretcompiler` binaries too (`SECRETSKIT_CLI_SHA256`), not just `SECRETSKIT_CLI_PATH`/`PATH`
+  binaries; auto-bootstrap for `seal`/`validate` requires the digest to be set, and the freshly
+  built binary is verified before use. `seal`/`validate` no longer fall back to a mutable `main`
+  branch (the fallback remains for `install` only).
+- `Scripts/bootstrap_secrets.sh` sets `umask 077`, so the created plaintext secrets file is not
+  world-readable.
+- Vault provider rejects `VAULT_ADDR` values with embedded credentials (`user:pass@host`), which
+  could otherwise leak into request-error logs; authenticate via `VAULT_TOKEN` only.
+- An invalid `--placeholder-regex` / `SECRETS_PLACEHOLDER_REGEX` now fails the build instead of
+  silently falling back to the default pattern.
+- Sealed output and `generate-key` material are written via a `0600` temp file that is moved into
+  place when the destination is absent and atomically `replaceItemAt`-replaced when it exists, so
+  they are never briefly world-readable regardless of the caller's umask, a directory destination is
+  refused instead of being deleted, and first-time writes succeed.
+- Runner: the bootstrap cache fast path now verifies `SECRETSKIT_CLI_SHA256` too, so a cached binary
+  with a mismatching digest cannot be executed via `SECRETSKIT_AUTO_BOOTSTRAP=1` after the
+  resolve-time refusal.
 
 ### Added
-- Regression tests for serverOnly-only sealing and runner forwarding of `--require-classification`
-  (39 tests total).
+- Regression tests for serverOnly-only sealing and runner forwarding of `--require-classification`,
+  plus new tests for runner digest enforcement on cached binaries, the no-`main`-fallback rule,
+  Vault userinfo rejection, placeholder-regex handling, and `0600` sealed-file permissions.
+- `.gitignore` and `IntegrationTemplates/README.md` now cover consumer artifacts: `.tools/`,
+  `*.sealed`, `*.material`, `Secrets.xcconfig`.
+- Docs: runner policy semantics, CI provenance guidance (`SECRETSKIT_CLI_SHA256`, never set
+  `SECRETS_VAULT_ALLOW_INSECURE_HTTP` in CI), and Vault transport notes.
 
 ## 0.4.0 — Unreleased
 

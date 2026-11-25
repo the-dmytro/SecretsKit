@@ -41,19 +41,23 @@ If you need to export additional `SECRETS_*` values, do it inside the wrapper sc
 
 The runner defaults to **`strict`** (set `cli.policy` in the config, or `SECRETSKIT_CLI_POLICY`):
 
-- **`strict`** (default, recommended for builds that process plaintext secrets):
+- **`strict`** / **`locked`** (default is `strict`; recommended for builds that process plaintext
+  secrets):
   - Resolves the compiler ref from `Package.resolved`; **no silent `main` fallback** — fails closed if
     no ref is resolvable.
-  - Refuses an ambient `SECRETSKIT_CLI_PATH` or `PATH` `secretcompiler` **unless**
-    `SECRETSKIT_CLI_SHA256` matches its digest. If a PATH binary is present but not digest-pinned,
-    strict mode fails closed instead of continuing past it.
+  - Refuses an ambient `SECRETSKIT_CLI_PATH`, a `PATH` `secretcompiler`, **or a cached/bootstrapped
+    build** unless `SECRETSKIT_CLI_SHA256` matches its digest. If a binary is present but not
+    digest-pinned, strict mode fails closed instead of continuing past it.
+  - Auto-bootstrap for `seal`/`validate` additionally requires `SECRETSKIT_CLI_SHA256` to be set, and
+    the freshly built binary is verified against it before use.
   - Verifies the checked-out revision equals the resolved revision after bootstrap.
-- **`compatible`** (opt-down, lower assurance): the previous flexible behavior — explicit path, then
-  `PATH` binary, then cached source build, with a `main` fallback.
+- **`compatible`** (opt-down, lower assurance): explicit path, then `PATH` binary, then cached source
+  build. A `main` fallback is used only for `install` — `seal`/`validate` never run an unpinned
+  mutable-branch build unless you set `SECRETSKIT_CLI_REF`/`SECRETSKIT_CLI_REF_FALLBACK` explicitly.
 
 ### Tool resolution order
-- `strict`: digest-pinned `SECRETSKIT_CLI_PATH` → digest-pinned `PATH` binary → cached/bootstrapped
-  build of the locked ref only when no ambient `PATH` compiler is present.
-- `compatible`: `SECRETSKIT_CLI_PATH` → `PATH` binary → cached source build → `main`.
+- `strict`: digest-pinned `SECRETSKIT_CLI_PATH` → digest-pinned `PATH` binary → digest-pinned cached
+  build of the locked ref → digest-pinned bootstrap, only when no ambient compiler is present.
+- `compatible`: `SECRETSKIT_CLI_PATH` → `PATH` binary → cached source build of the resolved ref.
 
 If none is available, the runner prints actionable instructions.

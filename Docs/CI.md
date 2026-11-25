@@ -17,6 +17,15 @@ ${SRCROOT}/Scripts/SecretsKit/secretskit.sh validate
 ${SRCROOT}/Scripts/SecretsKit/secretskit.sh seal
 ```
 
+## Compiler provenance in CI
+- Use `cli.policy: "locked"` (or `strict`) in `Config/SecretsKit.config.json` so the compiler ref is
+  pinned by `Package.resolved`.
+- Set `SECRETSKIT_CLI_SHA256` to the SHA-256 of the approved `secretcompiler` binary. Under strict
+  policy the runner refuses `SECRETSKIT_CLI_PATH`, `PATH`, cached, and bootstrapped binaries whose
+  digest does not match, and auto-bootstrap for `seal`/`validate` requires the digest to be set.
+- Do not point `SECRETSKIT_REPO_URL` at untrusted locations.
+- Never set `SECRETS_VAULT_ALLOW_INSECURE_HTTP` in CI (it would send `VAULT_TOKEN` over plaintext HTTP).
+
 ## Vault provider (example)
 ```
 export SECRETS_PROVIDER=vault

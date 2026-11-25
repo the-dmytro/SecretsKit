@@ -16,6 +16,11 @@ final class VaultPathTests: XCTestCase {
         }
     }
 
+    func testVaultURLRejectsEmbeddedCredentials() {
+        XCTAssertThrowsError(try buildVaultURL(address: "https://user:password@vault.example.com", requestPath: "secret/data/app"))
+        XCTAssertThrowsError(try buildVaultURL(address: "https://token@vault.example.com", requestPath: "secret/data/app"))
+    }
+
     func testVaultURLUsesValidatedPercentEncodedSegments() throws {
         let requestPath = try buildVaultRequestPath(mount: "secret mount", path: "team api/key", kvVersion: 2)
         XCTAssertEqual(requestPath, "secret%20mount/data/team%20api/key")

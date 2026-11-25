@@ -6,16 +6,19 @@ private func parseCsv(_ value: String) -> [String] {
     return value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
 }
 
-private func placeholderRegex(from value: String?) -> NSRegularExpression {
+func placeholderRegex(from value: String?) throws -> NSRegularExpression {
     let fallbackPattern = "(YOUR_.*|__.*__|PLACEHOLDER|REPLACE_ME)"
-    let pattern = value?.isEmpty == false ? value! : fallbackPattern
-    if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
-        return regex
+    guard let value, !value.isEmpty else {
+        return try NSRegularExpression(pattern: fallbackPattern, options: [])
     }
-    return try! NSRegularExpression(pattern: fallbackPattern, options: [])
+    do {
+        return try NSRegularExpression(pattern: value, options: [])
+    } catch {
+        throw SecretCompilerError.invalidPlaceholderRegex(value)
+    }
 }
 
-private func isPlaceholder(_ value: String, regex: NSRegularExpression) -> Bool {
+func isPlaceholder(_ value: String, regex: NSRegularExpression) -> Bool {
     if value.isEmpty { return true }
     let range = NSRange(location: 0, length: value.utf16.count)
     return regex.firstMatch(in: value, options: [], range: range) != nil
@@ -225,12 +228,36 @@ private func printClassificationReport(_ classified: ClassifiedKeys, schema: Sec
     FileHandle.standardError.write(Data((lines.joined(separator: "\n") + "\n").utf8))
 }
 
-private func writeSealedData(_ data: Data, to outputPath: String) throws {
+func writeSealedData(_ data: Data, to outputPath: String) throws {
+    try writeDataWithOwnerOnlyPermissions(data, to: outputPath)
+    print("Secrets sealed to \(URL(fileURLWithPath: outputPath).path)")
+}
+
+private func writeDataWithOwnerOnlyPermissions(_ data: Data, to outputPath: String) throws {
     let outputURL = URL(fileURLWithPath: outputPath)
-    try FileManager.default.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
-    try data.write(to: outputURL, options: [.atomic])
-    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: outputURL.path)
-    print("Secrets sealed to \(outputURL.path)")
+    let fileManager = FileManager.default
+    try fileManager.createDirectory(at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+    var isDirectory: ObjCBool = false
+    let destinationExists = fileManager.fileExists(atPath: outputURL.path, isDirectory: &isDirectory)
+    if destinationExists && isDirectory.boolValue {
+        throw SecretCompilerError.fileWriteFailed(outputPath)
+    }
+    let tempURL = outputURL.deletingLastPathComponent()
+        .appendingPathComponent(".\(outputURL.lastPathComponent).tmp-\(UUID().uuidString)")
+    guard fileManager.createFile(atPath: tempURL.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
+        throw SecretCompilerError.fileWriteFailed(outputPath)
+    }
+    do {
+        if destinationExists {
+            _ = try fileManager.replaceItemAt(outputURL, withItemAt: tempURL, backupItemName: nil, options: [.usingNewMetadataOnly])
+        } else {
+            try fileManager.moveItem(at: tempURL, to: outputURL)
+        }
+    } catch {
+        _ = try? fileManager.removeItem(at: tempURL)
+        throw SecretCompilerError.fileWriteFailed(outputPath)
+    }
+    try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: outputURL.path)
 }
 
 private func runValidate(args: CLIArguments, env: [String: String]) throws -> Int32 {
@@ -257,7 +284,7 @@ private func runValidate(args: CLIArguments, env: [String: String]) throws -> In
     let provider = try makeProvider(from: args, env: env, config: config, requiredKeys: keys)
     let secrets = try provider.loadSecrets(for: keys)
 
-    let regex = placeholderRegex(from: args.option("placeholder-regex") ?? env["SECRETS_PLACEHOLDER_REGEX"])
+    let regex = try placeholderRegex(from: args.option("placeholder-regex") ?? env["SECRETS_PLACEHOLDER_REGEX"])
 
     var hasErrors = false
     for key in keys {
@@ -314,7 +341,7 @@ func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 {
     let required = requiredKeys(schema: schema, override: requiredOverride).filter { !serverOnlySet.contains($0) }
     let provider = try makeProvider(from: args, env: env, config: config, requiredKeys: required)
     let secrets = try provider.loadSecrets(for: keys)
-    let regex = placeholderRegex(from: args.option("placeholder-regex") ?? env["SECRETS_PLACEHOLDER_REGEX"])
+    let regex = try placeholderRegex(from: args.option("placeholder-regex") ?? env["SECRETS_PLACEHOLDER_REGEX"])
 
     var hasErrors = false
     for key in required {
@@ -411,8 +438,7 @@ private func runGenerateKey(args: CLIArguments, env: [String: String]) throws ->
     try FileManager.default.createDirectory(at: materialURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    try encoder.encode(material).write(to: materialURL, options: [.atomic])
-    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: materialURL.path)
+    try writeDataWithOwnerOnlyPermissions(encoder.encode(material), to: materialURL.path)
     print("Obfuscation key material written to \(materialURL.path) — pass to `seal` via --key-material.")
 
     return 0
@@ -519,6 +545,12 @@ func main() -> Int32 {
         return 1
     } catch SecretCompilerError.invalidKeyMaterial(let detail) {
         printError("Invalid obfuscation key material: \(detail)")
+        return 1
+    } catch SecretCompilerError.invalidPlaceholderRegex(let pattern) {
+        printError("Invalid placeholder regex '\(pattern)'. Fix --placeholder-regex / SECRETS_PLACEHOLDER_REGEX.")
+        return 1
+    } catch SecretCompilerError.fileWriteFailed(let path) {
+        printError("Failed to write sealed output to \(path)")
         return 1
     } catch SecretCompilerError.legacyOBF2RequiresExplicitOptIn {
         printError("Refusing to seal obfuscated entries in legacy OBF2 by default. Run `secretcompiler generate-key` and pass --key-material for OBF3, or set --legacy-obf2 for migration only.")
