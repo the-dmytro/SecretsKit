@@ -15,6 +15,8 @@ enum SecretCompilerError: Error {
     case vaultInvalidResponse(String)
     case vaultInsecureTransport(String)
     case invalidKeyMaterial(String)
+    case invalidPlaceholderRegex(String)
+    case fileWriteFailed(String)
     case legacyOBF2RequiresExplicitOptIn
     case missingClassification([String])
     case invalidClassification(String)
@@ -51,6 +53,10 @@ extension SecretCompilerError: CustomStringConvertible {
             return "Insecure Vault transport: \(address)"
         case .invalidKeyMaterial(let detail):
             return "Invalid obfuscation key material: \(detail)"
+        case .invalidPlaceholderRegex(let pattern):
+            return "Invalid placeholder regex: \(pattern)"
+        case .fileWriteFailed(let path):
+            return "Failed to write output file: \(path)"
         case .legacyOBF2RequiresExplicitOptIn:
             return "Legacy OBF2 sealing requires explicit opt-in"
         case .missingClassification(let keys):
@@ -279,6 +285,9 @@ func buildVaultURL(address: String, requestPath: String) throws -> URL {
     }
     guard components.query == nil, components.fragment == nil else {
         throw SecretCompilerError.vaultRequestFailed("Vault address must not contain query or fragment")
+    }
+    guard components.user == nil, components.password == nil else {
+        throw SecretCompilerError.vaultRequestFailed("Vault address must not embed credentials; authenticate via the token header instead")
     }
 
     let basePath = components.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))

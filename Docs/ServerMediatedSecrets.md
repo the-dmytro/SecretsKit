@@ -28,14 +28,14 @@ contract below is what to build (or wire to an existing backend).
 
 ```
             ┌─────────┐   1. attest device + request token (scope)    ┌──────────────┐
-            │  app    │ ────────────────────────────────────────────▶ │  your backend │
+            │  app    │ ────────────────────────────────────────────▶ │ your backend │
             │ (client)│ ◀──────────────────────────────────────────── │              │
-            └─────────┘   2. short-lived, scoped token (+ expiry)      └──────┬───────┘
-                                                                              │ holds the
-                                                                              │ real secret
-                                                                       ┌──────▼───────┐
-                                                                       │ upstream API │
-                                                                       └──────────────┘
+            └─────────┘   2. short-lived, scoped token (+ expiry)     └──────┬───────┘
+                                                                             │ holds the
+                                                                             │ real secret
+                                                                      ┌──────▼───────┐
+                                                                      │ upstream API │
+                                                                      └──────────────┘
 ```
 
 1. **Attest the client.** Gate token issuance on **App Attest** (`DCAppAttestService`, iOS 14+) or
