@@ -17,6 +17,8 @@ Use `classification` in the schema to control how each key ships.
 unclassified keys processed by the command. For a schema containing only `serverOnly` keys, the
 compiler writes an empty `OBF3` resource without contacting a provider.
 
+[Full example schema](Config/Secrets.schema.json)
+
 ```json
 {
   "keys": {
@@ -32,8 +34,9 @@ compiler writes an empty `OBF3` resource without contacting a provider.
 `SecretsRuntime` loads `Secrets.sealed` from the app bundle and returns values on demand.
 The `secretcompiler` CLI runs on macOS.
 
-- `validate` checks required keys for missing and placeholder values.
-- `seal` writes `Secrets.sealed` to the app's resources.
+- `validate` checks required client keys for missing and placeholder values.
+- `seal` writes `Secrets.sealed`. It needs a non-empty value for every key selected for
+  bundling, including keys that are optional for `validate`.
 - `generate-key` creates the Swift key and the matching material used during sealing.
 
 Keep a copy of the runner script in your project so Xcode build phases can use a stable path
@@ -45,67 +48,24 @@ its source-build cache.
 - watchOS 7+
 - macOS 11+
 
+Building the Swift package requires Swift 5.9 or later.
+
 ## Quick start (Xcode)
 
-1. In Xcode, choose **File → Add Package Dependencies…** and enter
-   `https://github.com/the-dmytro/SecretsKit.git`. Add the `SecretsRuntime` product to your app targets.
-2. Create `Config/Secrets.schema.json` with your key names and classifications.
-   [Example schema](Config/Secrets.schema.json)
-3. Create `Config/SecretsKit.config.json` with your provider settings. Commit the schema and
-   config without secret values. [Example config](Config/SecretsKit.config.json.example)
-4. Copy the runner templates into `Scripts/SecretsKit/` in your project and run
-   `chmod +x Scripts/SecretsKit/*.sh`. Add the ignore entries to your project's
-   `.gitignore`. [Runner templates](IntegrationTemplates/Scripts/SecretsKit) ·
-   [Ignore entries](IntegrationTemplates/README.md#keep-secrets-out-of-source-control)
-5. Use an approved compiler. To build one on macOS, run
-   `swift build -c release --product secretcompiler` from a trusted SecretsKit checkout. Find the
-   binary at `$(swift build -c release --show-bin-path)/secretcompiler`. Set its absolute path and
-   approved SHA-256 in the wrappers or build environment for Xcode and CI. Export the same
-   settings in your terminal before running the next step.
-
-   ```sh
-   export SECRETSKIT_CLI_PATH="/absolute/path/to/secretcompiler"
-   export SECRETSKIT_CLI_SHA256="<approved SHA-256>"
-   ```
-
-   The default `strict` policy and its `locked` alias check the digest for compilers selected by
-   path, found on `PATH`, or loaded from the cache. Auto-bootstrap during `seal` or `validate`
-   requires a digest too, and the runner checks it after the build. With either policy,
-   `secretskit.sh install` can read the SecretsKit revision from Xcode's `Package.resolved`.
-   If you set `SECRETSKIT_CLI_REF`, use the same value for install and the build phases.
-   `seal` and `validate` never fall back to `main`. Build the compiler
-   before injecting secrets into CI.
-   [Runner integration](Docs/RunnerIntegration.md) · [CI setup](Docs/CI.md)
-
-6. If you bundle obfuscated entries, generate the obfuscation key once per app from your project root.
-
-   ```sh
-   "$SECRETSKIT_CLI_PATH" generate-key \
-     --symbol AppObfKey \
-     --swift-output Sources/Generated/AppObfKey.swift \
-     --material-output Config/AppObfKey.material
-   ```
-
-   Add the Swift file to your app target. Keep the matching `.material` file out of source control
-   and make it available locally and in CI. In the seal wrapper, export
-   `SECRETS_OBF_KEY_MATERIAL="${SRCROOT}/Config/AppObfKey.material"` or pass the file with
-   `--key-material`.
-
-7. Add a **Validate Secrets** build phase early and a **Seal Secrets** phase after Xcode stages
-   resources. Quote the paths to support project directories containing spaces.
-
-   ```sh
-   "${SRCROOT}/Scripts/SecretsKit/validate_secrets.sh"
-   "${SRCROOT}/Scripts/SecretsKit/seal_secrets.sh"
-   ```
+Add `SecretsRuntime` to your app target, then configure the schema, provider, and compiler.
+Use the runner templates to validate inputs and write `Secrets.sealed` during the build.
+[Full Xcode setup](Docs/XcodeIntegration.md) · [Runner setup](Docs/RunnerIntegration.md) ·
+[CI setup](Docs/CI.md)
 
 ## Providers
 
 ### `file`
-Reads a private `.xcconfig` (`KEY = VALUE`) or JSON file. The compiler resolves a relative
-`sourcePath` from the directory that contains the config. Keep the input file out of source control.
-`Scripts/bootstrap_secrets.sh` creates a local `.xcconfig` with owner-only permissions at
-`SECRETS_SOURCE_PATH`.
+Reads a private `.xcconfig` (`KEY = VALUE`) or a JSON object with string values. The compiler
+resolves a relative `sourcePath` from the directory that contains the config. Use literal
+values in the `.xcconfig` file. The parser leaves `$(...)` expressions unexpanded and strips
+conditional key suffixes without evaluating them. Keep the input file out of source control.
+From a SecretsKit checkout, `Scripts/bootstrap_secrets.sh` copies the example `.xcconfig`
+to `SECRETS_SOURCE_PATH` with owner-only permissions when the file is absent.
 
 ```json
 { "provider": "file", "file": { "sourcePath": "../../your-secrets/Secrets.xcconfig" } }
@@ -113,14 +73,7 @@ Reads a private `.xcconfig` (`KEY = VALUE`) or JSON file. The compiler resolves 
 
 ### `env`
 Set an environment variable for each client value, using the key from the schema as its name.
-In CI, use the compiler pin from the quick start and supply the matching `.material` file if
-you seal obfuscated entries.
-
-```sh
-export SECRETS_PROVIDER=env
-./Scripts/SecretsKit/secretskit.sh validate
-./Scripts/SecretsKit/secretskit.sh seal --output "$PWD/Secrets.sealed"
-```
+[CI example](Docs/CI.md#standalone-validate-and-seal)
 
 ### `vault`
 Reads secrets from HashiCorp Vault KV (v1/v2). Use an HTTPS `VAULT_ADDR` without embedded
@@ -128,8 +81,11 @@ credentials, supply the token through `VAULT_TOKEN`, and set `SECRETS_VAULT_PATH
 [Vault configuration](Docs/VaultProvider.md)
 
 ### `auto`
-Tries providers in order until it finds one with every required key. Use it when local builds and
-CI pull values from different providers.
+By default, tries `env`, `vault`, then `file` and selects the first provider with non-empty
+values for all required client keys. Placeholder checks happen after selection. With
+`auto.allowMerge` or `SECRETS_AUTO_MERGE=1`, providers fill in keys in order and the first
+provider that supplies a key wins. Set `auto.order` in the config or override it with the
+comma-separated `SECRETS_AUTO_ORDER`.
 
 ## Runtime usage
 ```swift
@@ -151,23 +107,22 @@ pass `--legacy-obf2` or set `SECRETSKIT_ALLOW_LEGACY_OBF2=1`.
 ## Configuration overrides
 
 - `SECRETS_CONFIG_PATH`
+- `SECRETS_SCHEMA_PATH`
+- `SECRETS_REQUIRED_KEYS` (comma-separated list that replaces the command's schema selection)
 - `SECRETS_PROVIDER` (`env|file|vault|auto`)
 - `SECRETS_SOURCE_PATH` (for `file`)
 - `SECRETS_OUTPUT_PATH` (for `seal`)
 - `SECRETS_OBF_KEY_MATERIAL` (for `OBF3` seal)
 - `SECRETS_PLACEHOLDER_REGEX` or `--placeholder-regex` for a custom pattern. An invalid pattern
-  fails the placeholder check.
+  fails the command when it checks client values.
 - `SECRETSKIT_REQUIRE_CLASSIFICATION=1` (fail on keys without `classification`)
 - `SECRETSKIT_ALLOW_LEGACY_OBF2=1` (migration-only fallback)
 
-## Security notes
-- Keep plaintext inputs out of the repository and DerivedData. The compiler writes sealed output
-  and generated `.material` files with owner-only (`0600`) permissions.
-- Ship only values you can expose. Anyone inspecting the app can recover obfuscated values from
-  `Secrets.sealed` using the key compiled into the app.
-- The threat model and roadmap describe the remaining risks and planned changes.
-  [`Docs/ImprovementPlan/`](Docs/ImprovementPlan/README.md)
+## Security and maintenance
 
-## Local tests
+Treat every bundled value as client-visible. The compiler writes sealed output and generated
+`.material` files with owner-only (`0600`) permissions.
+[Security boundaries and deferred work](Docs/SecurityNotes.md)
 
-Run `swift test` from the SecretsKit repository root on macOS.
+Run `swift test` from the repository root on macOS. [Review guide](Docs/ReviewGuidelines.md) ·
+[Changelog](CHANGELOG.md)

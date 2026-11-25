@@ -1,36 +1,30 @@
-# Vault Provider
+# Vault provider
 
-SecretsKit supports HashiCorp Vault KV v1/v2 for build-time secrets.
+The build-time `vault` provider reads string values from HashiCorp Vault KV v1 or v2. Use a
+path containing only values safe to ship in a client bundle. Keep `serverOnly` credentials
+on your backend. [Server-mediated secrets](ServerMediatedSecrets.md)
 
-## Required environment
-- `VAULT_ADDR` (e.g. `https://vault.example.com`)
-- `VAULT_TOKEN` (token with read access)
-- `SECRETS_VAULT_PATH` (path to the secret)
+| Setting | Default or requirement |
+| --- | --- |
+| `VAULT_ADDR` | HTTPS address, such as `https://vault.example.com` |
+| `VAULT_TOKEN` | Token with read access to the secret path |
+| `SECRETS_VAULT_PATH` | Path relative to the mount, such as `apps/your-app` |
+| `VAULT_NAMESPACE` | Optional Vault Enterprise namespace |
+| `SECRETS_VAULT_MOUNT` | `secret` |
+| `SECRETS_VAULT_KV_VERSION` | `2` |
+| `SECRETS_VAULT_TIMEOUT` | 10 seconds, clamped to 1–60 seconds |
 
-## Optional environment
-- `VAULT_NAMESPACE` (enterprise namespaces)
-- `SECRETS_VAULT_MOUNT` (default: `secret`)
-- `SECRETS_VAULT_KV_VERSION` (default: `2`)
-- `SECRETS_VAULT_TIMEOUT` (seconds, default: `10`)
+With mount `kv` and path `apps/your-app`, KV v2 requests `/v1/kv/data/apps/your-app` and
+KV v1 requests `/v1/kv/apps/your-app`. If a path already begins with the mount segments, the
+compiler treats it as the full API path after `/v1/`. Mount and path segments are
+percent-encoded. Query and fragment delimiters, control characters, relative segments, and
+empty interior segments are rejected.
 
-## Notes
-- Values are read in-memory only.
-- The CLI never prints secret values in logs.
-- `VAULT_ADDR` must be `https` unless `SECRETS_VAULT_ALLOW_INSECURE_HTTP=1` is set for local
-  development. **Never set that flag in CI** — it would send `VAULT_TOKEN` over plaintext HTTP.
-- `VAULT_ADDR` must not embed credentials (`user:password@host` is rejected); authenticate with the
-  `VAULT_TOKEN` header only, so credentials cannot leak into request-error messages.
-- The CLI uses the system TLS stack without certificate pinning; pin the Vault certificate at your
-  network layer if your threat model requires it.
-- Mount and path are treated as path segments: query delimiters, fragments, control characters,
-  relative segments, and empty segments are rejected; valid characters that need escaping are
-  percent-encoded.
+The compiler accepts non-secret defaults such as `vault.addr`, `vault.mount`, and
+`vault.path` in the config. It reads the token from the environment and sends it in the
+`X-Vault-Token` header. The address rejects embedded credentials, queries, and fragments.
+The CLI uses system TLS trust. Plain HTTP is available only with the explicit local
+development override `SECRETS_VAULT_ALLOW_INSECURE_HTTP=1`.
 
-## Short-lived credentials (recommended)
-Prefer CI-native, short-lived Vault auth (e.g. OIDC/JWT) over a long-lived `VAULT_TOKEN` kept in a
-shell profile. Scope the policy to read-only on the specific path with a short TTL.
-
-## Scope: client-bundled values only
-The `vault` provider feeds the build-time bundle, so only point it at `public`/`clientBundled` values.
-A `serverOnly` secret must never reach `Secrets.sealed` (the build refuses it) — read those from Vault
-on your **backend** at request time instead. See [`ServerMediatedSecrets.md`](ServerMediatedSecrets.md).
+In CI, prefer a short-lived token obtained through the job's Vault authentication flow
+and scope it to read access on the specific path. [Example config](../Config/SecretsKit.config.json.example)
