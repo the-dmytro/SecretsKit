@@ -1,63 +1,51 @@
-# Runner Integration (Recommended)
+# Runner integration
 
-This guide describes the project-owned runner approach. The runner is committed in the consumer repo and is the only script called by Xcode build phases.
+Copy the [runner and wrappers](../IntegrationTemplates/README.md) into the consumer project so
+Xcode can call them from a stable path outside DerivedData. The runner defaults to
+`Config/SecretsKit.config.json`. Set `SECRETS_CONFIG_PATH` to use a different file.
 
-## Why a runner script
-- Avoids relying on DerivedData paths for remote SPM packages.
-- Allows teams to choose how `secretcompiler` is provisioned:
-  - Homebrew (fast-path),
-  - cached source build (default fallback),
-  - explicit path override.
+## Provision the compiler
 
-## Expected files in the consumer repo
-- `Scripts/SecretsKit/secretskit.sh` (runner, committed)
-- `Scripts/SecretsKit/validate_secrets.sh` (optional wrapper)
-- `Scripts/SecretsKit/seal_secrets.sh` (optional wrapper)
-- `Config/SecretsKit.config.json` (non-secret, committed)
-- `Config/Secrets.schema.json` (non-secret, committed)
+Build the CLI from a trusted SecretsKit checkout on macOS with Swift 5.9 or later.
 
-The runner template is available in:
-- `IntegrationTemplates/Scripts/SecretsKit/secretskit.sh`
-An example config is available in:
-- `Config/SecretsKit.config.json.example`
-
-## Install / bootstrap
-You can bootstrap the tool once per machine:
-```
-./Scripts/SecretsKit/secretskit.sh install
+```sh
+swift build -c release --product secretcompiler
 ```
 
-## Build phases
-Call the runner or wrappers from Xcode build phases:
+The binary is at `$(swift build -c release --show-bin-path)/secretcompiler`. Supply its absolute
+path and the SHA-256 from your approved build to the consumer's build environment.
+
+```sh
+export SECRETSKIT_CLI_PATH="/absolute/path/to/secretcompiler"
+export SECRETSKIT_CLI_SHA256="<approved SHA-256>"
 ```
-${SRCROOT}/Scripts/SecretsKit/validate_secrets.sh
-${SRCROOT}/Scripts/SecretsKit/seal_secrets.sh
-```
 
-Use `SECRETS_CONFIG_PATH` if the config lives outside `Config/SecretsKit.config.json`.
-If you need to export additional `SECRETS_*` values, do it inside the wrapper scripts.
+For a source-built cache, run `./Scripts/SecretsKit/secretskit.sh install` from the consumer
+project root before supplying secrets. With `strict` or `locked`, the runner uses
+`SECRETSKIT_CLI_REF` if set, otherwise it looks for an Xcode `Package.resolved` and prefers the
+SecretsKit revision in that file. Supply the same ref to install and the build phases if you
+set it explicitly. The default cache is `.tools/secretskit/<ref>/secretcompiler`. When install
+builds without a digest, establish the approved digest before using the cache for
+`validate` or `seal`.
 
-## Compiler provenance policy
+## Compiler selection and policy
 
-The runner defaults to **`strict`** (set `cli.policy` in the config, or `SECRETSKIT_CLI_POLICY`):
+The runner checks an executable at `SECRETSKIT_CLI_PATH` first, then `secretcompiler` on `PATH`,
+then a cached compiler for the selected ref. Choose a policy with `cli.policy` in the config or
+override it with `SECRETSKIT_CLI_POLICY`.
 
-- **`strict`** / **`locked`** (default is `strict`; recommended for builds that process plaintext
-  secrets):
-  - Resolves the compiler ref from `Package.resolved`; **no silent `main` fallback** — fails closed if
-    no ref is resolvable.
-  - Refuses an ambient `SECRETSKIT_CLI_PATH`, a `PATH` `secretcompiler`, **or a cached/bootstrapped
-    build** unless `SECRETSKIT_CLI_SHA256` matches its digest. If a binary is present but not
-    digest-pinned, strict mode fails closed instead of continuing past it.
-  - Auto-bootstrap for `seal`/`validate` additionally requires `SECRETSKIT_CLI_SHA256` to be set, and
-    the freshly built binary is verified against it before use.
-  - Verifies the checked-out revision equals the resolved revision after bootstrap.
-- **`compatible`** (opt-down, lower assurance): explicit path, then `PATH` binary, then cached source
-  build. A `main` fallback is used only for `install` — `seal`/`validate` never run an unpinned
-  mutable-branch build unless you set `SECRETSKIT_CLI_REF`/`SECRETSKIT_CLI_REF_FALLBACK` explicitly.
+- `strict` is the default, and `locked` uses the same checks. A selected compiler needs a
+  matching digest for secret-processing commands. A verified compiler at an explicit path or
+  on `PATH` can run without a source ref. The source build checks the checked-out commit when
+  the selected ref is a full commit SHA.
+- `compatible` accepts path and cached binaries without the strict digest requirement.
+  Source lookup uses `SECRETSKIT_CLI_REF` or `SECRETSKIT_CLI_REF_FALLBACK`. Only `install`
+  falls back to `main` when neither is set. Supply a commit SHA for a reproducible source build.
 
-### Tool resolution order
-- `strict`: digest-pinned `SECRETSKIT_CLI_PATH` → digest-pinned `PATH` binary → digest-pinned cached
-  build of the locked ref → digest-pinned bootstrap, only when no ambient compiler is present.
-- `compatible`: `SECRETSKIT_CLI_PATH` → `PATH` binary → cached source build of the resolved ref.
+Set `SECRETSKIT_AUTO_BOOTSTRAP=1` to allow a source build during `seal` or `validate`. This
+requires a resolvable ref, and strict or locked policy also requires an approved digest before
+building. The runner checks that digest before using the resulting binary.
 
-If none is available, the runner prints actionable instructions.
+For Xcode build phases, pass compiler settings through the build environment or wrappers.
+For CI, provision the compiler before injecting plaintext inputs. [Xcode setup](XcodeIntegration.md)
+· [CI setup](CI.md)

@@ -1,40 +1,32 @@
-# CI Usage
+# CI setup
 
-Preferred mode in CI is `env` or `vault` to avoid creating plaintext files in the workspace.
+Provision an approved macOS `secretcompiler` before injecting secrets. Use `strict` (the
+default) or `locked` with an approved SHA-256. The runner checks the digest for explicit, PATH,
+cached, and bootstrapped compilers used by the build. Keep source builds on a trusted repository
+and a pinned revision. [Compiler setup](RunnerIntegration.md)
 
-## Environment provider (example)
-```
+## Standalone validate and seal
+
+Run from the consumer project root after installing the runner templates. This example assumes
+the sample schema and config. Inject `EXAMPLE_API_KEY` and `EXAMPLE_CLIENT_ID` through the
+CI job environment and make the matching key material available to the job.
+
+```sh
 export SECRETS_PROVIDER=env
-export SECRETS_CONFIG_PATH=/path/to/Config/SecretsKit.config.json
-export SECRETS_OUTPUT_PATH=${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Secrets.sealed
-export SECRETS_OBF_KEY_MATERIAL=/path/to/Config/AppObfKey.material
+export SECRETS_CONFIG_PATH="$PWD/Config/SecretsKit.config.json"
+export SECRETS_OBF_KEY_MATERIAL="$PWD/Config/AppObfKey.material"
 
-# Secrets as environment variables
-export EXAMPLE_API_KEY="..."
-export EXAMPLE_CLIENT_ID="..."
-
-${SRCROOT}/Scripts/SecretsKit/secretskit.sh validate
-${SRCROOT}/Scripts/SecretsKit/secretskit.sh seal
+./Scripts/SecretsKit/secretskit.sh validate
+./Scripts/SecretsKit/secretskit.sh seal --output "$PWD/Secrets.sealed"
 ```
 
-## Compiler provenance in CI
-- Use `cli.policy: "locked"` (or `strict`) in `Config/SecretsKit.config.json` so the compiler ref is
-  pinned by `Package.resolved`.
-- Set `SECRETSKIT_CLI_SHA256` to the SHA-256 of the approved `secretcompiler` binary. Under strict
-  policy the runner refuses `SECRETSKIT_CLI_PATH`, `PATH`, cached, and bootstrapped binaries whose
-  digest does not match, and auto-bootstrap for `seal`/`validate` requires the digest to be set.
-- Do not point `SECRETSKIT_REPO_URL` at untrusted locations.
-- Never set `SECRETS_VAULT_ALLOW_INSECURE_HTTP` in CI (it would send `VAULT_TOKEN` over plaintext HTTP).
+For an Xcode build, run the validate and seal phases in the target. The runner uses Xcode's
+resource directory for the output when `SECRETS_OUTPUT_PATH` is unset. Omit the material
+setting if every bundled entry is plaintext. [Xcode setup](XcodeIntegration.md)
 
-## Vault provider (example)
-```
-export SECRETS_PROVIDER=vault
-export SECRETS_CONFIG_PATH=/path/to/Config/SecretsKit.config.json
-export VAULT_ADDR="https://vault.example.com"
-export VAULT_TOKEN="..."
-export SECRETS_VAULT_PATH="kv/apps/your-app"
-export SECRETS_OBF_KEY_MATERIAL=/path/to/Config/AppObfKey.material
+## Vault
 
-${SRCROOT}/Scripts/SecretsKit/secretskit.sh validate
-${SRCROOT}/Scripts/SecretsKit/secretskit.sh seal
-```
+Use `SECRETS_PROVIDER=vault` with the same runner commands. For a KV v2 mount named `kv`,
+set `SECRETS_VAULT_MOUNT=kv` and `SECRETS_VAULT_PATH=apps/your-app`. Configure the HTTPS
+address in `VAULT_ADDR` and inject a short-lived read token as `VAULT_TOKEN`. Leave
+`SECRETS_VAULT_ALLOW_INSECURE_HTTP` unset in CI. [Vault settings](VaultProvider.md)
