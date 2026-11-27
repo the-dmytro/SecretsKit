@@ -1,4 +1,5 @@
 #if os(macOS)
+import Darwin
 import Foundation
 import SecretsRuntime
 
@@ -113,6 +114,20 @@ private func makeProvider(from args: CLIArguments, env: [String: String], config
         case "env":
             return EnvSecretsProvider(environment: env)
         case "vault":
+            let vault = config?.file.vault
+            switch vault?.backend?.lowercased() ?? "hashicorp" {
+            case "1password":
+                guard let references = vault?.references, !references.isEmpty else {
+                    throw SecretCompilerError.missingVaultConfig("vault.references")
+                }
+                let configuredTimeout = Double(env["SECRETS_VAULT_TIMEOUT"] ?? "") ?? vault?.timeoutSeconds ?? 30
+                let timeout = configuredTimeout.isFinite ? min(max(configuredTimeout, 1), 60) : 30
+                return OnePasswordVaultProvider(references: references, environment: env, timeoutSeconds: timeout)
+            case "hashicorp":
+                break
+            default:
+                throw SecretCompilerError.unsupportedProvider("vault backend")
+            }
             let settings = try resolveVaultSettings(env: env, config: config)
             return VaultSecretsProvider(
                 address: settings.address,
@@ -307,6 +322,60 @@ private func runValidate(args: CLIArguments, env: [String: String]) throws -> In
     return 0
 }
 
+private func runExec(args: CLIArguments, env: [String: String]) throws -> Int32 {
+    guard let executable = args.childArguments.first, !executable.isEmpty else {
+        printError("Usage: secretcompiler exec --config <path> -- <executable> [args...]")
+        return 1
+    }
+    let config = try loadConfig(from: args, env: env)
+    let schema = try loadSchema(from: args, env: env, config: config)
+    let override = args.option("required-keys") ?? env["SECRETS_REQUIRED_KEYS"]
+    let keys = requiredKeys(schema: schema, override: override)
+    guard !keys.isEmpty else { throw SecretCompilerError.missingSchema }
+
+    let provider = try makeProvider(from: args, env: env, config: config, requiredKeys: keys)
+    let secrets = try provider.loadSecrets(for: keys)
+    let regex = try placeholderRegex(from: args.option("placeholder-regex") ?? env["SECRETS_PLACEHOLDER_REGEX"])
+    var environment: [(String, String)] = []
+    for key in keys {
+        guard key.range(of: #"\A[A-Za-z_][A-Za-z0-9_]*\z"#, options: .regularExpression) != nil else {
+            printError("Schema contains a key that is not a valid environment variable name.")
+            return 1
+        }
+        guard let value = secrets[key], !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            printError("Missing secret: \(key)")
+            return 1
+        }
+        guard !value.contains("\0"), !isPlaceholder(value, regex: regex) else {
+            printError("Invalid secret value for: \(key)")
+            return 1
+        }
+        environment.append((key, value))
+    }
+
+    let arguments = args.childArguments.map { strdup($0) }
+    defer { arguments.forEach { free($0) } }
+    guard arguments.allSatisfy({ $0 != nil }) else {
+        printError("Could not prepare executable arguments.")
+        return 1
+    }
+    for (key, value) in environment {
+        guard setenv(key, value, 1) == 0 else {
+            printError("Could not set environment variable: \(key)")
+            return 1
+        }
+    }
+
+    var argv = arguments + [nil]
+    return argv.withUnsafeMutableBufferPointer { buffer in
+        guard let baseAddress = buffer.baseAddress else { return 1 }
+        execvp(executable, baseAddress)
+        let status: Int32 = errno == ENOENT ? 127 : 126
+        printError("Could not launch requested executable: \(String(cString: strerror(errno)))")
+        return status
+    }
+}
+
 func runSeal(args: CLIArguments, env: [String: String]) throws -> Int32 {
     let config = try loadConfig(from: args, env: env)
     let schema = try loadSchema(from: args, env: env, config: config)
@@ -450,6 +519,7 @@ private func printUsage() {
       secretcompiler validate --config <path> --schema <path> --provider <file|env|vault|auto> --source <path>
       secretcompiler seal --config <path> --schema <path> --provider <file|env|vault|auto> --source <path> --output <path> --key-material <path>
       secretcompiler seal ... --legacy-obf2   # explicit migration-only fallback
+      secretcompiler exec --config <path> -- <executable> [args...]
       secretcompiler generate-key --swift-output <path> [--material-output <path>] [--symbol <name>]
       secretcompiler version [--json]
 
@@ -502,6 +572,8 @@ func main() -> Int32 {
             return try runValidate(args: args, env: env)
         case "seal", "obfuscate":
             return try runSeal(args: args, env: env)
+        case "exec":
+            return try runExec(args: args, env: env)
         case "generate-key":
             return try runGenerateKey(args: args, env: env)
         case "version", "--version":

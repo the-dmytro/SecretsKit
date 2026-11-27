@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 ### Fixed
 
@@ -16,6 +16,10 @@
 
 ### Added
 
+- The `vault` provider supports `vault.backend: "1password"` and schema-key
+  mappings to 1Password CLI field references.
+- `secretcompiler exec` resolves required credentials and replaces itself
+  with a child process that receives them in its environment.
 - Regression tests for compiler digest enforcement, Vault URL validation, placeholder
   patterns, and sealed-file permissions.
 - Consumer ignore patterns for the runner cache, sealed output, and local secret inputs.

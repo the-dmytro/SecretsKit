@@ -76,9 +76,17 @@ Set an environment variable for each client value, using the key from the schema
 [CI example](Docs/CI.md#standalone-validate-and-seal)
 
 ### `vault`
-Reads secrets from HashiCorp Vault KV (v1/v2). Use an HTTPS `VAULT_ADDR` without embedded
-credentials, supply the token through `VAULT_TOKEN`, and set `SECRETS_VAULT_PATH`.
+Reads secrets from HashiCorp Vault KV (v1/v2) by default. Set `vault.backend` to
+`1password` to resolve configured `op://` field references using the 1Password CLI.
 [Vault configuration](Docs/VaultProvider.md)
+
+### Run an executable with secrets
+
+`secretcompiler exec --config <path> -- <executable> [args…]` resolves the schema's
+required values through the configured provider and passes them as environment
+variables. It supports `serverOnly` keys and preserves the executable's exit status
+and signal handling. Use a trusted executable. Its environment contains the
+resolved values for the lifetime of that process.
 
 ### `auto`
 By default, tries `env`, `vault`, then `file` and selects the first provider with non-empty

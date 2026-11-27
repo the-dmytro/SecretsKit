@@ -1,8 +1,12 @@
 # Vault provider
 
-The build-time `vault` provider reads string values from HashiCorp Vault KV v1 or v2. Use a
-path containing only values safe to ship in a client bundle. Keep `serverOnly` credentials
-on your backend. [Server-mediated secrets](ServerMediatedSecrets.md)
+The `vault` provider supports HashiCorp Vault KV and 1Password. Client bundle
+schemas can only seal values allowed by their classifications.
+[Server-mediated secrets](ServerMediatedSecrets.md)
+
+## HashiCorp Vault
+
+Omit `vault.backend`, or set it to `hashicorp`, to use Vault KV v1 or v2.
 
 | Setting | Default or requirement |
 | --- | --- |
@@ -28,3 +32,34 @@ development override `SECRETS_VAULT_ALLOW_INSECURE_HTTP=1`.
 
 In CI, prefer a short-lived token obtained through the job's Vault authentication flow
 and scope it to read access on the specific path. [Example config](../Config/SecretsKit.config.json.example)
+
+## 1Password
+
+Install the 1Password CLI (`op`) and enable desktop CLI integration for an
+interactive local build. Copy each value's secret reference into the config.
+References can use field names or IDs, with an optional section.
+
+```json
+{
+  "schemaPath": "Secrets.schema.json",
+  "provider": "vault",
+  "vault": {
+    "backend": "1password",
+    "references": {
+      "APP_TOKEN": "op://Development/Example App/api key"
+    }
+  }
+}
+```
+
+The compiler resolves only requested schema keys. It uses PATH, then the
+standard Homebrew paths, to locate `op`. `vault.timeoutSeconds` or
+`SECRETS_VAULT_TIMEOUT` bounds each lookup (default 30 seconds, range 1–60).
+Troubleshoot access in the desktop app and verify that the configured
+reference points to a non-empty field. CLI output is private to the compiler.
+
+To pass required server-side values to a process, use
+`secretcompiler exec --config ServerSecrets.config.json -- /path/to/server`.
+The server config can reference `serverOnly` keys. No sealed bundle is created.
+[Secret references](https://www.1password.dev/cli/secret-reference-syntax) ·
+[Desktop integration](https://www.1password.dev/cli/app-integration)

@@ -11,6 +11,8 @@ struct SecretsKitConfigFile: Decodable {
     }
 
     struct VaultConfig: Decodable {
+        let backend: String?
+        let references: [String: String]?
         let addr: String?
         let addrEnv: String?
         let tokenEnv: String?
