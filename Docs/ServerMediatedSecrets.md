@@ -5,6 +5,14 @@ validation or sealing if `--required-keys` or `SECRETS_REQUIRED_KEYS` explicitly
 This keeps the values out of `Secrets.sealed`. SecretsKit provides build-time enforcement.
 A token exchange and reference backend are deferred.
 
+## Start a backend with SecretsKit
+
+Use `secretcompiler exec` with a dedicated schema that marks the backend's
+required privileged keys as `serverOnly`. The command resolves required keys
+through the configured provider and passes them in the backend process
+environment. Validation and sealing still apply the client-bundle rules.
+[Direct compiler invocation](RunnerIntegration.md#run-a-process-with-secrets)
+
 ## Backend and client responsibilities
 
 Keep the upstream credential on your backend. The app can call that backend to perform the

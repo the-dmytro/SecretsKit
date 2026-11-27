@@ -35,7 +35,7 @@ and scope it to read access on the specific path. [Example config](../Config/Sec
 
 ## 1Password
 
-Install the 1Password CLI (`op`) and enable desktop CLI integration for an
+Use SecretsKit 0.5.0 or later. Install the 1Password CLI (`op`) and enable desktop CLI integration for an
 interactive local build. Copy each value's secret reference into the config.
 References can use field names or IDs, with an optional section.
 
@@ -56,7 +56,8 @@ The compiler resolves only requested schema keys. It uses PATH, then the
 standard Homebrew paths, to locate `op`. `vault.timeoutSeconds` or
 `SECRETS_VAULT_TIMEOUT` bounds each lookup (default 30 seconds, range 1–60).
 Troubleshoot access in the desktop app and verify that the configured
-reference points to a non-empty field. CLI output is private to the compiler.
+reference points to a non-empty field. CLI output is private to the compiler. For unattended builds, see
+[1Password in CI](CI.md#1password).
 
 To pass required server-side values to a process, use
 `secretcompiler exec --config ServerSecrets.config.json -- /path/to/server`.

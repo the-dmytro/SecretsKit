@@ -7,6 +7,10 @@
    `schemaPath` and `file.sourcePath`, are relative to the config directory. Commit both files
    without secret values. [Example schema](../Config/Secrets.schema.json) ·
    [Example config](../Config/SecretsKit.config.json.example)
+   For 1Password, use SecretsKit 0.5.0 or later, configure `vault.backend`
+   and the field references, and make the authenticated `op` CLI available to
+   the build. [1Password setup](VaultProvider.md#1password)
+
 3. Copy the runner and wrappers into `Scripts/SecretsKit/`. From the consumer project root, run
    `chmod +x Scripts/SecretsKit/*.sh`. Provision an approved macOS compiler and make its absolute
    path and approved SHA-256 available to both your shell and Xcode build phases.

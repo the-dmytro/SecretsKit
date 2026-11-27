@@ -24,6 +24,16 @@ If a privileged credential is accidentally bundled, revoke or rotate it with the
 then remove it from the next build. Previously distributed copies still contain their original
 values. [Server-mediated secrets](ServerMediatedSecrets.md)
 
+## Vault references and process environments
+
+The 1Password backend keeps field values in the compiler process until they
+are sealed or passed to a trusted program through `exec`. Checked-in config
+can contain field references. Keep provider authentication credentials in
+the build or launch environment. An `exec` program inherits the caller's
+environment along with the resolved values, so launch it with only the
+ambient credentials it needs.
+[1Password settings](VaultProvider.md#1password)
+
 ## Deferred work
 
 - Manifest signing for whole-resource integrity. `OBF3` authenticates each obfuscated

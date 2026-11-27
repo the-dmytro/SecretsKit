@@ -76,17 +76,9 @@ Set an environment variable for each client value, using the key from the schema
 [CI example](Docs/CI.md#standalone-validate-and-seal)
 
 ### `vault`
-Reads secrets from HashiCorp Vault KV (v1/v2) by default. Set `vault.backend` to
-`1password` to resolve configured `op://` field references using the 1Password CLI.
+Reads secrets from HashiCorp Vault KV (v1/v2) by default. With SecretsKit 0.5.0
+or later, set `vault.backend` to `1password` to resolve configured `op://` field references using the 1Password CLI.
 [Vault configuration](Docs/VaultProvider.md)
-
-### Run an executable with secrets
-
-`secretcompiler exec --config <path> -- <executable> [args…]` resolves the schema's
-required values through the configured provider and passes them as environment
-variables. It supports `serverOnly` keys and preserves the executable's exit status
-and signal handling. Use a trusted executable. Its environment contains the
-resolved values for the lifetime of that process.
 
 ### `auto`
 By default, tries `env`, `vault`, then `file` and selects the first provider with non-empty
@@ -94,6 +86,14 @@ values for all required client keys. Placeholder checks happen after selection. 
 `auto.allowMerge` or `SECRETS_AUTO_MERGE=1`, providers fill in keys in order and the first
 provider that supplies a key wins. Set `auto.order` in the config or override it with the
 comma-separated `SECRETS_AUTO_ORDER`.
+
+## Run an executable with secrets
+
+`secretcompiler exec --config <path> -- <executable> [args…]` resolves the schema's
+required values through the configured provider and passes them as environment
+variables. It supports `serverOnly` keys and preserves the executable's exit status
+and signal handling. Use a trusted executable. Its environment contains the
+resolved values for the lifetime of that process.
 
 ## Runtime usage
 ```swift

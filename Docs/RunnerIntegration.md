@@ -49,3 +49,14 @@ building. The runner checks that digest before using the resulting binary.
 For Xcode build phases, pass compiler settings through the build environment or wrappers.
 For CI, provision the compiler before injecting plaintext inputs. [Xcode setup](XcodeIntegration.md)
 · [CI setup](CI.md)
+
+## Run a process with secrets
+
+Invoke the provisioned compiler directly for `exec`. The Xcode runner
+templates handle installation, validation, and sealing.
+
+```sh
+"$SECRETSKIT_CLI_PATH" exec --config Config/ServerSecrets.config.json -- /path/to/server
+```
+
+Use an approved compiler before running it directly. [Server credential scope](ServerMediatedSecrets.md)
